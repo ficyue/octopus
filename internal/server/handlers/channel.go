@@ -239,8 +239,26 @@ func testChannel(c *gin.Context) {
 		testMessage = "Hello, please say hi and introduce yourself briefly."
 	}
 
+	// 从渠道的模型列表中取第一个模型作为测试模型
+	var testModel string
+	for _, field := range []string{channel.Model, channel.CustomModel} {
+		for _, m := range strings.Split(field, ",") {
+			m = strings.TrimSpace(m)
+			if m != "" {
+				testModel = m
+				break
+			}
+		}
+		if testModel != "" {
+			break
+		}
+	}
+	if testModel == "" {
+		testModel = "gpt-3.5-turbo"
+	}
+
 	internalReq := &transformerModel.InternalLLMRequest{
-		Model:       "",
+		Model:       testModel,
 		MaxTokens:   ptrInt64(128),
 		Temperature: ptrFloat64(0.7),
 		Messages: []transformerModel.Message{

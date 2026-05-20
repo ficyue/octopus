@@ -70,6 +70,7 @@ func (m *RelayMetrics) SetInternalResponse(resp *transformerModel.InternalLLMRes
 			CachedTokens: 0,
 		}
 	}
+	m.Stats.CachedTokens = usage.PromptTokensDetails.CachedTokens
 	if usage.AnthropicUsage {
 		m.Stats.InputCost = (float64(usage.PromptTokensDetails.CachedTokens)*modelPrice.CacheRead +
 			float64(usage.PromptTokens)*modelPrice.Input +
@@ -84,11 +85,12 @@ func (m *RelayMetrics) Save(ctx context.Context, success bool, err error, attemp
 	duration := time.Since(m.StartTime)
 
 	globalStats := model.StatsMetrics{
-		WaitTime:    duration.Milliseconds(),
-		InputToken:  m.Stats.InputToken,
-		OutputToken: m.Stats.OutputToken,
-		InputCost:   m.Stats.InputCost,
-		OutputCost:  m.Stats.OutputCost,
+		WaitTime:     duration.Milliseconds(),
+		InputToken:   m.Stats.InputToken,
+		OutputToken:  m.Stats.OutputToken,
+		CachedTokens: m.Stats.CachedTokens,
+		InputCost:    m.Stats.InputCost,
+		OutputCost:   m.Stats.OutputCost,
 	}
 	if success {
 		globalStats.RequestSuccess = 1
@@ -158,6 +160,7 @@ func (m *RelayMetrics) saveLog(ctx context.Context, err error, duration time.Dur
 	if m.InternalResponse != nil && m.InternalResponse.Usage != nil {
 		relayLog.InputTokens = int(m.InternalResponse.Usage.PromptTokens)
 		relayLog.OutputTokens = int(m.InternalResponse.Usage.CompletionTokens)
+		relayLog.CachedTokens = int(m.Stats.CachedTokens)
 		relayLog.Cost = m.Stats.InputCost + m.Stats.OutputCost
 	}
 

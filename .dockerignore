@@ -1,0 +1,13 @@
+data
+build
+.git
+.gitignore
+.vscode
+web/node_modules
+web/.next
+web/out
+*.md
+LICENSE
+docker-compose.yml
+Dockerfile
+.dockerignore

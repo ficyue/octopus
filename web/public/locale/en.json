@@ -112,7 +112,8 @@
             "inputTokens": "Input Tokens",
             "inputCost": "Input Cost",
             "outputTokens": "Output Tokens",
-            "outputCost": "Output Cost"
+            "outputCost": "Output Cost",
+            "cachedTokens": "Cache Hit"
         },
         "chart": {
             "title": "Trend",
@@ -445,7 +446,9 @@
             "retryDetails": "Retry Details",
             "attempts": "attempts",
             "success": "Success",
-            "failed": "Failed"
+            "failed": "Failed",
+            "cachedTokens": "Cached",
+            "cachedTokensShort": "cached"
         }
     },
     "channel": {
@@ -481,7 +484,8 @@
                 "outputToken": "Output Tokens",
                 "inputCost": "Input Cost",
                 "outputCost": "Output Cost",
-                "avgWaitTime": "Wait Time"
+                "avgWaitTime": "Wait Time",
+                "cachedTokens": "Cache Hit Tokens"
             },
             "actions": {
                 "edit": "Edit",
@@ -490,8 +494,24 @@
                 "saving": "Saving...",
                 "delete": "Delete",
                 "confirmDelete": "Confirm Delete",
-                "deleting": "Deleting..."
-            }
+                "deleting": "Deleting...",
+                "test": "Test",
+                "back": "Back"
+            },
+            "test": {
+                "title": "Channel Test",
+                "testing": "Testing channel connection...",
+                "success": "Test passed",
+                "failed": "Test failed",
+                "run": "Run Test",
+                "model": "Model",
+                "latency": "Latency",
+                "tokensIn": "Prompt Tokens",
+                "tokensOut": "Completion Tokens",
+                "description": "Click the button below to send a test message and verify the channel is working correctly.",
+                "response": "Response"
+            },
+            "passthroughEnabled": "Passthrough mode active"
         },
         "create": {
             "dialogTitle": "Create New Channel",
@@ -541,7 +561,8 @@
             "autoGroupRegex": "Regex",
             "matchRegex": "Match Regex",
             "matchRegexPlaceholder": "Optional: regex pattern to match request model names",
-            "remark": "Remark"
+            "remark": "Remark",
+            "passthrough": "Passthrough Mode (no protocol transform)"
         }
     }
 }

@@ -27,8 +27,8 @@ import (
 
 // Handler 处理入站请求并转发到上游服务
 func Handler(inboundType inbound.InboundType, c *gin.Context) {
-	// 解析请求
-	internalRequest, inAdapter, err := parseRequest(inboundType, c)
+	// 解析请求（同时返回原始 body 供 passthrough 模式使用）
+	internalRequest, rawBody, inAdapter, err := parseRequest(inboundType, c)
 	if err != nil {
 		return
 	}
@@ -70,6 +70,7 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 		apiKeyID:        apiKeyID,
 		requestModel:    requestModel,
 		iter:            iter,
+		rawBody:         rawBody,
 	}
 
 	var lastErr error
@@ -220,19 +221,19 @@ func (ra *relayAttempt) attempt() attemptResult {
 	}
 }
 
-// parseRequest 解析并验证入站请求
-func parseRequest(inboundType inbound.InboundType, c *gin.Context) (*model.InternalLLMRequest, model.Inbound, error) {
+// parseRequest 解析并验证入站请求，返回原始 body 供 passthrough 使用
+func parseRequest(inboundType inbound.InboundType, c *gin.Context) (*model.InternalLLMRequest, []byte, model.Inbound, error) {
 	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	inAdapter := inbound.Get(inboundType)
 	internalRequest, err := inAdapter.TransformRequest(c.Request.Context(), body)
 	if err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	// Pass through the original query parameters
@@ -240,15 +241,20 @@ func parseRequest(inboundType inbound.InboundType, c *gin.Context) (*model.Inter
 
 	if err := internalRequest.Validate(); err != nil {
 		resp.Error(c, http.StatusBadRequest, err.Error())
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
-	return internalRequest, inAdapter, nil
+	return internalRequest, body, inAdapter, nil
 }
 
 // forward 转发请求到上游服务
 func (ra *relayAttempt) forward() (int, error) {
 	ctx := ra.c.Request.Context()
+
+	// 透传模式：直接转发客户端原始请求，跳过协议转换
+	if ra.channel.Passthrough {
+		return ra.forwardPassthrough(ctx)
+	}
 
 	// 构建出站请求
 	outboundRequest, err := ra.outAdapter.TransformRequest(
@@ -321,6 +327,66 @@ func (ra *relayAttempt) forward() (int, error) {
 	if err := ra.handleResponse(ctx, response); err != nil {
 		return 0, err
 	}
+	return response.StatusCode, nil
+}
+
+// forwardPassthrough 透传模式：直接转发客户端原始请求和原始响应
+func (ra *relayAttempt) forwardPassthrough(ctx context.Context) (int, error) {
+	baseUrl := ra.channel.GetBaseUrl()
+	if baseUrl == "" {
+		return 0, fmt.Errorf("no available base URL")
+	}
+
+	// 使用缓存的原始请求体
+	rawBody := ra.rawBody
+	if rawBody == nil {
+		return 0, fmt.Errorf("raw body not available for passthrough")
+	}
+
+	// 构建出站请求：使用原始 URL 路径拼接
+	fullURL := strings.TrimSuffix(baseUrl, "/") + ra.c.Request.URL.Path
+	if ra.c.Request.URL.RawQuery != "" {
+		fullURL += "?" + ra.c.Request.URL.RawQuery
+	}
+
+	outReq, err := http.NewRequestWithContext(ctx, ra.c.Request.Method, fullURL, bytes.NewReader(rawBody))
+	if err != nil {
+		return 0, fmt.Errorf("failed to create passthrough request: %w", err)
+	}
+
+	// 设置认证头
+	outReq.Header.Set("Authorization", "Bearer "+ra.usedKey.ChannelKey)
+
+	// 复制客户端请求头（过滤 hop-by-hop）
+	ra.copyHeaders(outReq)
+
+	// 发送请求
+	response, err := ra.sendRequest(outReq)
+	if err != nil {
+		return 0, fmt.Errorf("failed to send passthrough request: %w", err)
+	}
+	defer response.Body.Close()
+
+	// 检查响应状态
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		body, _ := io.ReadAll(response.Body)
+		return 0, fmt.Errorf("upstream error: %d: %s", response.StatusCode, string(body))
+	}
+
+	// 透传响应到客户端：复制状态码、响应头、响应体
+	for key, values := range response.Header {
+		for _, value := range values {
+			ra.c.Header(key, value)
+		}
+	}
+	ra.c.Status(response.StatusCode)
+
+	_, err = io.Copy(ra.c.Writer, response.Body)
+	if err != nil {
+		log.Warnf("failed to copy passthrough response body: %v", err)
+	}
+
+	// 标记已写入，禁止重试
 	return response.StatusCode, nil
 }
 

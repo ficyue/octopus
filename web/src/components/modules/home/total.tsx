@@ -11,7 +11,8 @@ import {
     ArrowUpFromLine,
     Rewind,
     DollarSign,
-    FastForward
+    FastForward,
+    Zap,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useStatsTotal } from '@/api/endpoints/stats';
@@ -79,6 +80,14 @@ export function Total() {
                     color: 'text-primary',
                     bgColor: 'bg-chart-3/10',
                     unit: statsTotalFormatted?.input_token.formatted.unit
+                },
+                {
+                    label: t('cachedTokens'),
+                    value: statsTotalFormatted?.cached_tokens.formatted.value,
+                    icon: Zap,
+                    color: 'text-primary',
+                    bgColor: 'bg-chart-5/10',
+                    unit: statsTotalFormatted?.cached_tokens.formatted.unit
                 },
                 {
                     label: t('inputCost'),

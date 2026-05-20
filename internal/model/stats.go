@@ -3,6 +3,7 @@ package model
 type StatsMetrics struct {
 	InputToken     int64   `json:"input_token" gorm:"bigint"`
 	OutputToken    int64   `json:"output_token" gorm:"bigint"`
+	CachedTokens   int64   `json:"cached_tokens" gorm:"bigint"`
 	InputCost      float64 `json:"input_cost" gorm:"type:real"`
 	OutputCost     float64 `json:"output_cost" gorm:"type:real"`
 	WaitTime       int64   `json:"wait_time" gorm:"bigint"`
@@ -46,6 +47,7 @@ type StatsAPIKey struct {
 // Add aggregates another StatsMetrics into the current one.
 func (s *StatsMetrics) Add(delta StatsMetrics) {
 	s.InputToken += delta.InputToken
+	s.CachedTokens += delta.CachedTokens
 	s.OutputToken += delta.OutputToken
 	s.InputCost += delta.InputCost
 	s.OutputCost += delta.OutputCost

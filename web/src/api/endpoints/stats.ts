@@ -8,6 +8,7 @@ import { formatCount, formatMoney, formatTime } from '@/lib/utils';
 interface StatsMetrics {
     input_token: number;
     output_token: number;
+    cached_tokens: number;
     input_cost: number;
     output_cost: number;
     wait_time: number;
@@ -18,6 +19,7 @@ interface StatsMetrics {
 export interface StatsMetricsFormatted {
     input_token: ReturnType<typeof formatCount>;
     output_token: ReturnType<typeof formatCount>;
+    cached_tokens: ReturnType<typeof formatCount>;
     input_cost: ReturnType<typeof formatMoney>;
     output_cost: ReturnType<typeof formatMoney>;
     wait_time: ReturnType<typeof formatTime>;
@@ -117,6 +119,7 @@ export function useStatsHourly() {
             date: item.date,
             input_token: formatCount(item.input_token),
             output_token: formatCount(item.output_token),
+            cached_tokens: formatCount(item.cached_tokens || 0),
             total_token: formatCount(item.input_token + item.output_token),
             input_cost: formatMoney(item.input_cost),
             output_cost: formatMoney(item.output_cost),
@@ -140,6 +143,7 @@ export function useStatsTotal() {
         select: (data) => ({
             input_token: formatCount(data.input_token),
             output_token: formatCount(data.output_token),
+            cached_tokens: formatCount(data.cached_tokens || 0),
             total_token: formatCount(data.input_token + data.output_token),
             input_cost: formatMoney(data.input_cost),
             output_cost: formatMoney(data.output_cost),
@@ -169,6 +173,7 @@ export function useStatsAPIKey() {
             api_key_id: item.api_key_id,
             input_token: formatCount(item.input_token),
             output_token: formatCount(item.output_token),
+            cached_tokens: formatCount(item.cached_tokens || 0),
             total_token: formatCount(item.input_token + item.output_token),
             input_cost: formatMoney(item.input_cost),
             output_cost: formatMoney(item.output_cost),

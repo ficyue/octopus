@@ -112,7 +112,8 @@
             "inputTokens": "输入 Tokens",
             "inputCost": "输入费用",
             "outputTokens": "输出 Tokens",
-            "outputCost": "输出费用"
+            "outputCost": "输出费用",
+            "cachedTokens": "缓存命中"
         },
         "chart": {
             "title": "趋势",
@@ -445,7 +446,9 @@
             "retryDetails": "重试详情",
             "attempts": "次尝试",
             "success": "成功",
-            "failed": "失败"
+            "failed": "失败",
+            "cachedTokens": "缓存命中",
+            "cachedTokensShort": "缓存"
         }
     },
     "channel": {
@@ -481,7 +484,8 @@
                 "outputToken": "输出 Token",
                 "inputCost": "输入成本",
                 "outputCost": "输出成本",
-                "avgWaitTime": "等待时间"
+                "avgWaitTime": "等待时间",
+                "cachedTokens": "缓存命中 Token"
             },
             "actions": {
                 "edit": "编辑",
@@ -490,8 +494,24 @@
                 "saving": "保存中...",
                 "delete": "删除",
                 "confirmDelete": "确认删除",
-                "deleting": "删除中..."
-            }
+                "deleting": "删除中...",
+                "test": "测试",
+                "back": "返回"
+            },
+            "test": {
+                "title": "渠道测试",
+                "testing": "正在测试渠道连通性...",
+                "success": "测试通过",
+                "failed": "测试失败",
+                "run": "开始测试",
+                "model": "模型",
+                "latency": "延迟",
+                "tokensIn": "输入 Token",
+                "tokensOut": "输出 Token",
+                "description": "点击下方按钮发送测试消息，验证渠道连通性。",
+                "response": "模型回复"
+            },
+            "passthroughEnabled": "透传模式已开启"
         },
         "create": {
             "dialogTitle": "创建新渠道",
@@ -541,7 +561,8 @@
             "autoGroupRegex": "正则匹配",
             "matchRegex": "匹配正则",
             "matchRegexPlaceholder": "可选：用于匹配请求模型名称的正则表达式",
-            "remark": "备注"
+            "remark": "备注",
+            "passthrough": "透传模式（不做协议转换）"
         }
     }
 }

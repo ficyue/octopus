@@ -25,6 +25,7 @@ type Channel struct {
 	Model         string                `json:"model"`
 	CustomModel   string                `json:"custom_model"`
 	Proxy         bool                  `json:"proxy" gorm:"default:false"`
+	Passthrough   bool                  `json:"passthrough" gorm:"default:false"`
 	AutoSync      bool                  `json:"auto_sync" gorm:"default:false"`
 	AutoGroup     AutoGroupType         `json:"auto_group" gorm:"default:0"`
 	CustomHeader  []CustomHeader        `json:"custom_header" gorm:"serializer:json"`
@@ -65,6 +66,7 @@ type ChannelUpdateRequest struct {
 	Model         *string                `json:"model,omitempty"`
 	CustomModel   *string                `json:"custom_model,omitempty"`
 	Proxy         *bool                  `json:"proxy,omitempty"`
+	Passthrough   *bool                  `json:"passthrough,omitempty"`
 	AutoSync      *bool                  `json:"auto_sync,omitempty"`
 	AutoGroup     *AutoGroupType         `json:"auto_group,omitempty"`
 	CustomHeader  *[]CustomHeader        `json:"custom_header,omitempty"`

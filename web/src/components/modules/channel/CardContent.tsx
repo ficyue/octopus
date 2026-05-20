@@ -9,9 +9,13 @@ import {
     Activity,
     TrendingUp,
     Globe,
-    Key
+    Key,
+    Zap,
+    FlaskConical,
+    Loader2,
+    ArrowRightLeft,
 } from 'lucide-react';
-import { useUpdateChannel, useDeleteChannel, type Channel, type UpdateChannelRequest } from '@/api/endpoints/channel';
+import { useUpdateChannel, useDeleteChannel, useTestChannel, type Channel, type UpdateChannelRequest, type TestChannelResponse } from '@/api/endpoints/channel';
 import {
     MorphingDialogTitle,
     MorphingDialogDescription,
@@ -31,6 +35,9 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
     const { setIsOpen } = useMorphingDialog();
     const updateChannel = useUpdateChannel();
     const deleteChannel = useDeleteChannel();
+    const testChannel = useTestChannel();
+    const [isTesting, setIsTesting] = useState(false);
+    const [testResult, setTestResult] = useState<TestChannelResponse | null>(null);
     const [isEditing, setIsEditing] = useState(false);
     const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
     const [formData, setFormData] = useState<ChannelFormData>({
@@ -55,13 +62,14 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
         model: channel.model,
         custom_model: channel.custom_model,
         proxy: channel.proxy,
+        passthrough: channel.passthrough,
         auto_sync: channel.auto_sync,
         auto_group: channel.auto_group,
         match_regex: channel.match_regex ?? '',
     });
     const t = useTranslations('channel.detail');
 
-    const currentView = isEditing ? 'editing' : 'viewing';
+    const currentView = isEditing ? 'editing' : isTesting ? 'testing' : 'viewing';
 
     const baseUrlsEqual = (a: Channel['base_urls'] | undefined, b: Channel['base_urls'] | undefined) =>
         JSON.stringify(a ?? []) === JSON.stringify(b ?? []);
@@ -85,6 +93,7 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
         if (formData.model !== channel.model) req.model = formData.model;
         if (formData.custom_model !== channel.custom_model) req.custom_model = formData.custom_model;
         if (formData.proxy !== channel.proxy) req.proxy = formData.proxy;
+        if (formData.passthrough !== channel.passthrough) req.passthrough = formData.passthrough;
         if (formData.auto_sync !== channel.auto_sync) req.auto_sync = formData.auto_sync;
         if (formData.auto_group !== channel.auto_group) req.auto_group = formData.auto_group;
 
@@ -150,6 +159,22 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
         });
     };
 
+    const handleTest = () => {
+        setTestResult(null);
+        setIsTesting(true);
+        testChannel.mutate(
+            { id: channel.id },
+            {
+                onSuccess: (data) => {
+                    setTestResult(data);
+                },
+                onError: (error) => {
+                    setTestResult({ success: false, model: '', content: '', latency_ms: 0, tokens_in: 0, tokens_out: 0, error: error.message });
+                },
+            }
+        );
+    };
+
     const handleDeleteClick = () => {
         if (!isConfirmingDelete) {
             setIsConfirmingDelete(true);
@@ -185,6 +210,12 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
                     <TabsContents>
                         <TabsContent value="viewing" >
                             <div className="max-h-[60vh] overflow-y-auto space-y-4 sm:space-y-5">
+                                {channel.passthrough && (
+                                    <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-3 flex items-center gap-2">
+                                        <ArrowRightLeft className="size-4 text-amber-500 shrink-0" />
+                                        <span className="text-sm font-medium text-amber-700 dark:text-amber-400">{t('passthroughEnabled')}</span>
+                                    </div>
+                                )}
                                 <dl className="grid gap-3 grid-cols-1 sm:grid-cols-3">
                                     <div className="rounded-2xl border bg-linear-to-br from-chart-1/10 to-chart-1/5 p-3 sm:p-4">
                                         <dt className="flex items-center gap-2 mb-2 text-xs font-medium text-muted-foreground">
@@ -277,6 +308,17 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
                                             <dd className="text-2xl font-bold text-card-foreground">
                                                 {stats.output_token.formatted.value}
                                                 <span className="text-sm font-normal ml-1 text-muted-foreground">{stats.output_token.formatted.unit}</span>
+                                            </dd>
+                                        </div>
+
+                                        <div className="rounded-2xl border bg-card p-3 sm:p-4 transition-colors hover:bg-accent/5 col-span-full">
+                                            <dt className="flex items-center gap-2 mb-2 text-xs text-muted-foreground">
+                                                <Zap className="size-3.5 text-amber-500" />
+                                                {t('metrics.cachedTokens')}
+                                            </dt>
+                                            <dd className="text-2xl font-bold text-card-foreground">
+                                                {stats.cached_tokens.formatted.value}
+                                                <span className="text-sm font-normal ml-1 text-muted-foreground">{stats.cached_tokens.formatted.unit}</span>
                                             </dd>
                                         </div>
                                     </dl>
@@ -422,7 +464,15 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
                             </div>
 
                             {/* 操作按钮 */}
-                            <div className="grid gap-3 sm:grid-cols-2 pt-2">
+                            <div className="grid gap-3 sm:grid-cols-3 pt-2">
+                                <Button
+                                    onClick={handleTest}
+                                    variant="outline"
+                                    className="w-full rounded-2xl h-12"
+                                >
+                                    <FlaskConical className="size-4" />
+                                    {t('actions.test')}
+                                </Button>
                                 <Button
                                     onClick={() => (isConfirmingDelete ? setIsConfirmingDelete(false) : setIsEditing(true))}
                                     variant={isConfirmingDelete ? 'secondary' : 'default'}
@@ -443,6 +493,103 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
                                             ? t('actions.confirmDelete')
                                             : t('actions.delete')}
                                 </Button>
+                            </div>
+                        </TabsContent>
+
+                        <TabsContent value="testing">
+                            <div className="max-h-[60vh] overflow-y-auto space-y-4">
+                                <div className="flex items-center justify-between">
+                                    <h3 className="text-lg font-semibold">{t('test.title')}</h3>
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => setIsTesting(false)}
+                                        className="rounded-xl"
+                                    >
+                                        {t('actions.back')}
+                                    </Button>
+                                </div>
+
+                                {testChannel.isPending && (
+                                    <div className="flex flex-col items-center justify-center py-12 gap-3">
+                                        <Loader2 className="size-8 animate-spin text-primary" />
+                                        <p className="text-sm text-muted-foreground">{t('test.testing')}</p>
+                                    </div>
+                                )}
+
+                                {testResult && !testChannel.isPending && (
+                                    <div className={cn(
+                                        "rounded-2xl border p-4",
+                                        testResult.success
+                                            ? "border-emerald-500/30 bg-emerald-500/5"
+                                            : "border-red-500/30 bg-red-500/5"
+                                    )}>
+                                        <div className="flex items-center gap-2 mb-3">
+                                            {testResult.success ? (
+                                                <>
+                                                    <CheckCircle2 className="size-5 text-emerald-500" />
+                                                    <span className="text-sm font-medium text-emerald-600 dark:text-emerald-400">{t('test.success')}</span>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <XCircle className="size-5 text-red-500" />
+                                                    <span className="text-sm font-medium text-red-600 dark:text-red-400">{t('test.failed')}</span>
+                                                </>
+                                            )}
+                                        </div>
+
+                                        {testResult.success && (
+                                            <dl className="space-y-2">
+                                                {testResult.model && (
+                                                    <div className="flex justify-between text-sm">
+                                                        <dt className="text-muted-foreground">{t('test.model')}</dt>
+                                                        <dd className="font-mono font-medium">{testResult.model}</dd>
+                                                    </div>
+                                                )}
+                                                <div className="flex justify-between text-sm">
+                                                    <dt className="text-muted-foreground">{t('test.latency')}</dt>
+                                                    <dd className="font-mono font-medium">{testResult.latency_ms}ms</dd>
+                                                </div>
+                                                {testResult.tokens_in > 0 && (
+                                                    <div className="flex justify-between text-sm">
+                                                        <dt className="text-muted-foreground">{t('test.tokensIn')}</dt>
+                                                        <dd className="font-mono font-medium">{testResult.tokens_in}</dd>
+                                                    </div>
+                                                )}
+                                                {testResult.tokens_out > 0 && (
+                                                    <div className="flex justify-between text-sm">
+                                                        <dt className="text-muted-foreground">{t('test.tokensOut')}</dt>
+                                                        <dd className="font-mono font-medium">{testResult.tokens_out}</dd>
+                                                    </div>
+                                                )}
+                                            </dl>
+                                        )}
+
+                                        {testResult.error && (
+                                            <div className="mt-3 rounded-xl bg-background/80 border border-border/50 p-3">
+                                                <p className="text-xs font-mono text-muted-foreground break-all">{testResult.error}</p>
+                                            </div>
+                                        )}
+
+                                        {testResult.success && testResult.content && (
+                                            <div className="mt-3 rounded-xl bg-background/80 border border-border/50 p-3">
+                                                <p className="text-xs text-muted-foreground mb-1">{t('test.response')}</p>
+                                                <p className="text-sm whitespace-pre-wrap">{testResult.content}</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                {!testChannel.isPending && !testResult && (
+                                    <div className="flex flex-col items-center justify-center py-12 gap-3">
+                                        <FlaskConical className="size-8 text-muted-foreground" />
+                                        <p className="text-sm text-muted-foreground">{t('test.description')}</p>
+                                        <Button onClick={handleTest} variant="default" className="rounded-xl">
+                                            <FlaskConical className="size-4" />
+                                            {t('test.run')}
+                                        </Button>
+                                    </div>
+                                )}
                             </div>
                         </TabsContent>
 

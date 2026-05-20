@@ -1,3 +1,7 @@
+# ============================================================
+# Debian-based runtime image for pre-built octopus binary.
+# Used by CI release pipeline — binary is injected during build.
+# ============================================================
 FROM debian:bookworm
 
 ARG TARGETPLATFORM
@@ -6,12 +10,19 @@ ENV TZ=Asia/Shanghai
 RUN apt-get update && apt-get install -y ca-certificates tzdata gosu && \
     ln -fs /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
     dpkg-reconfigure -f noninteractive tzdata && \
-    rm -rf /var/cache/apt/*  && \
-    mkdir -p /app
+    rm -rf /var/cache/apt/* && \
+    mkdir -p /app /app/data
 
 COPY build/docker/${TARGETPLATFORM}/octopus /app/octopus
 COPY scripts/dockerfiles/entrypoint.sh /entrypoint.sh
 
-RUN chmod +x /entrypoint.sh
+RUN chmod +x /app/octopus /entrypoint.sh
 
-CMD ["/entrypoint.sh"]
+ENV TZ=Asia/Shanghai
+ENV OCTOPUS_SERVER_HOST=0.0.0.0
+ENV OCTOPUS_SERVER_PORT=8080
+
+EXPOSE 8080
+VOLUME ["/app/data"]
+
+ENTRYPOINT ["/entrypoint.sh"]

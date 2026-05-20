@@ -112,7 +112,8 @@
             "inputTokens": "輸入 Tokens",
             "inputCost": "輸入費用",
             "outputTokens": "輸出 Tokens",
-            "outputCost": "輸出費用"
+            "outputCost": "輸出費用",
+            "cachedTokens": "快取命中"
         },
         "chart": {
             "title": "趨勢",
@@ -445,7 +446,9 @@
             "retryDetails": "重試詳情",
             "attempts": "次嘗試",
             "success": "成功",
-            "failed": "失敗"
+            "failed": "失敗",
+            "cachedTokens": "快取命中",
+            "cachedTokensShort": "快取"
         }
     },
     "channel": {
@@ -481,7 +484,8 @@
                 "outputToken": "輸出 Token",
                 "inputCost": "輸入成本",
                 "outputCost": "輸出成本",
-                "avgWaitTime": "等待時間"
+                "avgWaitTime": "等待時間",
+                "cachedTokens": "快取命中 Token"
             },
             "actions": {
                 "edit": "編輯",
@@ -490,8 +494,24 @@
                 "saving": "儲存中...",
                 "delete": "刪除",
                 "confirmDelete": "確認刪除",
-                "deleting": "刪除中..."
-            }
+                "deleting": "刪除中...",
+                "test": "測試",
+                "back": "返回"
+            },
+            "test": {
+                "title": "供應源測試",
+                "testing": "正在測試供應源連通性...",
+                "success": "測試通過",
+                "failed": "測試失敗",
+                "run": "開始測試",
+                "model": "模型",
+                "latency": "延遲",
+                "tokensIn": "輸入 Token",
+                "tokensOut": "輸出 Token",
+                "description": "點擊下方按鈕發送測試訊息，驗證供應源連通性。",
+                "response": "模型回覆"
+            },
+            "passthroughEnabled": "透傳模式已開啟"
         },
         "create": {
             "dialogTitle": "建立新供應源",
@@ -541,7 +561,8 @@
             "autoGroupRegex": "正規比對",
             "matchRegex": "匹配正規",
             "matchRegexPlaceholder": "可選：用於匹配請求模型名稱的正規表示式",
-            "remark": "備註"
+            "remark": "備註",
+            "passthrough": "透傳模式（不做協議轉換）"
         }
     }
 }

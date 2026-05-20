@@ -1,17 +1,28 @@
-FROM alpine
+# ============================================================
+# Alpine-based runtime image for pre-built octopus binary.
+# Used by CI release pipeline — binary is injected during build.
+# ============================================================
+FROM alpine:3.21
 
 ARG TARGETPLATFORM
 ENV TZ=Asia/Shanghai
 
-RUN apk add --no-cache alpine-conf ca-certificates su-exec && \
+RUN apk add --no-cache alpine-conf ca-certificates su-exec wget && \
     /usr/sbin/setup-timezone -z Asia/Shanghai && \
     apk del alpine-conf && \
     rm -rf /var/cache/apk/* && \
-    mkdir -p /app
+    mkdir -p /app /app/data
 
 COPY build/docker/${TARGETPLATFORM}/octopus /app/octopus
 COPY scripts/dockerfiles/entrypoint.sh /entrypoint.sh
 
-RUN chmod +x /entrypoint.sh
+RUN chmod +x /app/octopus /entrypoint.sh
 
-CMD ["/entrypoint.sh"]
+ENV TZ=Asia/Shanghai
+ENV OCTOPUS_SERVER_HOST=0.0.0.0
+ENV OCTOPUS_SERVER_PORT=8080
+
+EXPOSE 8080
+VOLUME ["/app/data"]
+
+ENTRYPOINT ["/entrypoint.sh"]

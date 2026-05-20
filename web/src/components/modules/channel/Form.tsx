@@ -37,6 +37,7 @@ export interface ChannelFormData {
     custom_model: string;
     enabled: boolean;
     proxy: boolean;
+    passthrough: boolean;
     auto_sync: boolean;
     auto_group: AutoGroupType;
     match_regex: string;
@@ -600,6 +601,15 @@ export function ChannelForm({
                             onCheckedChange={(checked) => onFormDataChange({ ...formData, auto_sync: checked })}
                         />
                         <span className="text-sm text-card-foreground">{t('autoSync')}</span>
+                    </label>
+                </div>
+                <div className="mt-2">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                        <Switch
+                            checked={formData.passthrough}
+                            onCheckedChange={(checked) => onFormDataChange({ ...formData, passthrough: checked })}
+                        />
+                        <span className="text-sm text-card-foreground">{t('passthrough')}</span>
                     </label>
                 </div>
             </div>

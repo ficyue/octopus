@@ -59,6 +59,7 @@ export type Channel = {
     model: string;
     custom_model: string;
     proxy: boolean;
+    passthrough: boolean;
     auto_sync: boolean;
     auto_group: AutoGroupType;
     custom_header: CustomHeader[];
@@ -87,6 +88,7 @@ export type CreateChannelRequest = {
     model: string;
     custom_model?: string;
     proxy?: boolean;
+    passthrough?: boolean;
     auto_sync?: boolean;
     auto_group?: AutoGroupType;
     custom_header?: CustomHeader[];
@@ -107,6 +109,7 @@ export type UpdateChannelRequest = {
     model?: string;
     custom_model?: string;
     proxy?: boolean;
+    passthrough?: boolean;
     auto_sync?: boolean;
     auto_group?: AutoGroupType;
     custom_header?: CustomHeader[];
@@ -156,6 +159,7 @@ export function useChannelList() {
             formatted: {
                 input_token: formatCount(item.stats.input_token),
                 output_token: formatCount(item.stats.output_token),
+                cached_tokens: formatCount(item.stats.cached_tokens || 0),
                 total_token: formatCount(item.stats.input_token + item.stats.output_token),
                 input_cost: formatMoney(item.stats.input_cost),
                 output_cost: formatMoney(item.stats.output_cost),
@@ -360,6 +364,31 @@ export function useSyncChannel() {
         },
         onError: (error) => {
             logger.error('渠道同步失败:', error);
+        },
+    });
+}
+export type TestChannelRequest = {
+    id: number;
+    message?: string;
+};
+
+export type TestChannelResponse = {
+    success: boolean;
+    model: string;
+    content: string;
+    latency_ms: number;
+    tokens_in: number;
+    tokens_out: number;
+    error?: string;
+};
+
+export function useTestChannel() {
+    return useMutation({
+        mutationFn: async (data: TestChannelRequest) => {
+            return apiClient.post<TestChannelResponse>('/api/v1/channel/test', data);
+        },
+        onError: (error) => {
+            logger.error('渠道测试失败:', error);
         },
     });
 }

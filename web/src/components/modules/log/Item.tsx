@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState, useEffect } from 'react';
-import { Clock, Cpu, Zap, AlertCircle, ArrowDownToLine, ArrowUpFromLine, DollarSign, ArrowRight, ArrowDown, Send, MessageSquare, Loader2, RotateCw, ChevronDown, ChevronUp, Pin, KeyRound } from 'lucide-react';
+import { Clock, Cpu, Zap, AlertCircle, ArrowDownToLine, ArrowUpFromLine, DollarSign, ArrowRight, ArrowDown, Send, MessageSquare, Loader2, RotateCw, ChevronDown, ChevronUp, Pin, KeyRound, Database } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { motion, AnimatePresence } from 'motion/react';
 import JsonView from '@uiw/react-json-view';
@@ -264,6 +264,12 @@ export function LogCard({ log }: { log: RelayLog }) {
                                     <ArrowUpFromLine className="size-3.5 shrink-0 text-purple-500" />
                                     <span>{t('output')} {log.output_tokens.toLocaleString()}</span>
                                 </div>
+                                {(log.cached_tokens || 0) > 0 && (
+                                    <div className="flex items-center gap-1.5">
+                                        <Database className="size-3.5 shrink-0 text-amber-500" />
+                                        <span>{t('cachedTokens')} {log.cached_tokens.toLocaleString()}</span>
+                                    </div>
+                                )}
                                 <div className="flex items-center gap-1.5">
                                     <DollarSign className="size-3.5 shrink-0 text-emerald-500" />
                                     <span className="font-medium text-emerald-600 dark:text-emerald-400">
@@ -427,6 +433,12 @@ export function LogCard({ log }: { log: RelayLog }) {
                                             <div className="flex items-center gap-2 px-3 md:px-4 py-2.5 md:py-3 border-b border-border bg-muted/50 shrink-0">
                                                 <Send className="size-4 text-green-500" />
                                                 <span className="text-sm font-medium text-card-foreground">{t('requestContent')}</span>
+                                                {(log.cached_tokens || 0) > 0 && (
+                                                    <Badge variant="secondary" className="text-xs">
+                                                        <Zap className="size-3 mr-1 text-amber-500" />
+                                                        {log.cached_tokens.toLocaleString()} {t('cachedTokensShort')}
+                                                    </Badge>
+                                                )}
                                                 <Badge variant="secondary" className="ml-auto text-xs">
                                                     {log.input_tokens.toLocaleString()} {t('tokens')}
                                                 </Badge>

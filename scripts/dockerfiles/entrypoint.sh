@@ -4,6 +4,9 @@ set -e
 PUID="${PUID:-0}"
 PGID="${PGID:-0}"
 
+# Ensure data directory exists
+mkdir -p /app/data
+
 chmod +x /app/octopus
 
 if [ "$PUID" != "0" ] || [ "$PGID" != "0" ]; then

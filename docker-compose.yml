@@ -1,9 +1,24 @@
 services:
   octopus:
-    image: bestrui/octopus
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VERSION: latest
+    image: octopus:latest
     ports:
-       - '8080:8080'
-    volumes:      
-       - '/path/to/data:/app/data'
+      - "8080:8080"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - OCTOPUS_SERVER_HOST=0.0.0.0
+      - OCTOPUS_SERVER_PORT=8080
+      - OCTOPUS_LOG_LEVEL=info
     container_name: octopus
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s

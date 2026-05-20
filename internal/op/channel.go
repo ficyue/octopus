@@ -153,6 +153,10 @@ func ChannelUpdate(req *model.ChannelUpdateRequest, ctx context.Context) (*model
 		selectFields = append(selectFields, "proxy")
 		updates.Proxy = *req.Proxy
 	}
+	if req.Passthrough != nil {
+		selectFields = append(selectFields, "passthrough")
+		updates.Passthrough = *req.Passthrough
+	}
 	if req.AutoSync != nil {
 		selectFields = append(selectFields, "auto_sync")
 		updates.AutoSync = *req.AutoSync

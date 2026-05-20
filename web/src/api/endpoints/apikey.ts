@@ -65,6 +65,7 @@ export function useAPIKeyDashboardStats() {
                 api_key_id: data.stats.api_key_id,
                 input_token: formatCount(data.stats.input_token),
                 output_token: formatCount(data.stats.output_token),
+                cached_tokens: formatCount(data.stats.cached_tokens || 0),
                 total_token: formatCount(data.stats.input_token + data.stats.output_token),
                 input_cost: formatMoney(data.stats.input_cost),
                 output_cost: formatMoney(data.stats.output_cost),

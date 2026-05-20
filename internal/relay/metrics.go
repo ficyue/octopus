@@ -208,9 +208,9 @@ func (m *RelayMetrics) saveLog(ctx context.Context, err error, duration time.Dur
 		}
 	}
 
-	// 响应内容：透传模式下当 TransformResponse 无法解析时，使用原始响应体
-	if len(m.PassthroughResponse) > 0 && m.InternalResponse == nil {
-		// 透传模式但未能解析为内部格式，使用原始响应体（截断过长的内容）
+	// 响应内容：透传模式优先使用原始响应体
+	if len(m.PassthroughResponse) > 0 {
+		// 透传模式使用原始响应体（截断过长的内容）
 		maxRespLen := 50000
 		if len(m.PassthroughResponse) > maxRespLen {
 			relayLog.ResponseContent = string(m.PassthroughResponse[:maxRespLen])

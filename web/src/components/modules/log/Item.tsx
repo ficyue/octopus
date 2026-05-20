@@ -256,7 +256,7 @@ export function LogCard({ log }: { log: RelayLog }) {
                                     <Cpu className="size-3.5 shrink-0 text-blue-500" />
                                     <span>{t('totalTime')} {formatDuration(log.use_time)}</span>
                                 </div>
-                                <div className="flex items-center gap-2 flex-wrap">
+                                <div className="col-span-2 md:col-span-7 flex items-center gap-2 flex-wrap">
                                     <span className="flex items-center gap-1">
                                         <ArrowDownToLine className="size-3.5 shrink-0 text-green-500" />
                                         <span>{log.input_tokens.toLocaleString()}</span>
@@ -488,13 +488,12 @@ export function LogCard({ log }: { log: RelayLog }) {
                                 <Cpu className="size-3.5 text-blue-500" />
                                 <span>{t('totalTime')}: {formatDuration(log.use_time)}</span>
                             </div>
-                            <span className="text-muted-foreground/50">|</span>
-                            <span className="flex items-center gap-1">
+                            <div className="flex items-center gap-1.5">
                                 <DollarSign className="size-3.5 text-emerald-500" />
                                 <span className="font-medium text-emerald-600 dark:text-emerald-400">
                                     {t('cost')}: {Number(log.cost).toFixed(6)}
                                 </span>
-                            </span>
+                            </div>
                         </div>
                     </MorphingDialogContent>
                 </MorphingDialogContainer>

@@ -246,6 +246,16 @@ func (m *RelayMetrics) ExtractUsageFromRawResponse(respBody []byte, isStream boo
 		return
 	}
 
+	// extractUsage 从 JSON 数据中提取 usage
+	extractUsage := func(data []byte) {
+		var usageRaw struct {
+			Usage *transformerModel.Usage `json:"usage"`
+		}
+		if err := json.Unmarshal(data, &usageRaw); err == nil && usageRaw.Usage != nil {
+			m.SetInternalResponse(&transformerModel.InternalLLMResponse{Usage: usageRaw.Usage}, m.ActualModel)
+		}
+	}
+
 	if isStream {
 		// 流式响应：逐行解析 SSE 事件，提取最后一个包含 usage 的 data
 		lines := bytes.Split(respBody, []byte("\n"))
@@ -257,23 +267,17 @@ func (m *RelayMetrics) ExtractUsageFromRawResponse(respBody []byte, isStream boo
 				if bytes.Equal(payload, []byte("[DONE]")) {
 					continue
 				}
-				var usageRaw struct {
-					Usage *transformerModel.Usage `json:"usage"`
-				}
-				if err := json.Unmarshal(payload, &usageRaw); err == nil && usageRaw.Usage != nil {
-					m.SetInternalResponse(&transformerModel.InternalLLMResponse{Usage: usageRaw.Usage}, m.ActualModel)
+				extractUsage(payload)
+				// 如果已经找到 usage，SetInternalResponse 会设置 InternalResponse，
+				// 后续再次调用时 InternalResponse 不为 nil，但 Stats 已经更新过了
+				if m.InternalResponse != nil {
 					return
 				}
 			}
 		}
 	} else {
 		// 非流式响应：直接从 JSON 中提取 usage
-		var respRaw struct {
-			Usage *transformerModel.Usage `json:"usage"`
-		}
-		if err := json.Unmarshal(respBody, &respRaw); err == nil && respRaw.Usage != nil {
-			m.SetInternalResponse(&transformerModel.InternalLLMResponse{Usage: respRaw.Usage}, m.ActualModel)
-		}
+		extractUsage(respBody)
 	}
 }
 

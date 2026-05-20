@@ -418,13 +418,28 @@ func (ra *relayAttempt) forwardPassthrough(ctx context.Context) (int, error) {
 	// 始终设置 ActualModel，确保日志中记录正确的实际模型名
 	ra.metrics.SetActualModel(ra.internalRequest.Model)
 
-	// 尝试解析响应统计信息（Usage），不阻塞主流程
-	response.Body = io.NopCloser(bytes.NewReader(respBody))
-	if internalResp, parseErr := ra.outAdapter.TransformResponse(ctx, response); parseErr == nil && internalResp != nil && internalResp.Usage != nil {
-		ra.metrics.SetInternalResponse(internalResp, ra.internalRequest.Model)
+	// 尝试解析响应统计信息（Usage）
+	isStream := ra.internalRequest.Stream != nil && *ra.internalRequest.Stream
+
+	if !isStream {
+		// 非流式：用 TransformResponse 解析完整响应
+		response.Body = io.NopCloser(bytes.NewReader(respBody))
+		if internalResp, parseErr := ra.outAdapter.TransformResponse(ctx, response); parseErr == nil && internalResp != nil {
+			if internalResp.Usage != nil {
+				log.Debugf("passthrough: TransformResponse succeeded, prompt_tokens=%d, completion_tokens=%d",
+					internalResp.Usage.PromptTokens, internalResp.Usage.CompletionTokens)
+				ra.metrics.SetInternalResponse(internalResp, ra.internalRequest.Model)
+			} else {
+				log.Debugf("passthrough: TransformResponse succeeded but usage is nil, trying raw extraction")
+				ra.metrics.ExtractUsageFromRawResponse(respBody, false)
+			}
+		} else {
+			log.Debugf("passthrough: TransformResponse failed (%v), trying raw extraction", parseErr)
+			ra.metrics.ExtractUsageFromRawResponse(respBody, false)
+		}
 	} else {
-		// TransformResponse 失败（如流式响应场景），尝试直接从响应体解析 usage
-		ra.metrics.ExtractUsageFromRawResponse(respBody, ra.internalRequest.Stream != nil && *ra.internalRequest.Stream)
+		// 流式：从 SSE 事件中提取 usage
+		ra.metrics.ExtractUsageFromRawResponse(respBody, true)
 	}
 
 	// 保存原始请求/响应体用于日志记录

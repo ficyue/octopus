@@ -1,5 +1,5 @@
 # ============================================================
-# Stage 1: Build frontend (Next.js static export)
+# Stage 1: Build frontend
 # ============================================================
 FROM node:22-alpine AS frontend-builder
 
@@ -15,10 +15,10 @@ COPY web/public ./public
 COPY web/src ./src
 
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN pnpm run build && ls -la /src/web/out/
+RUN pnpm run build
 
 # ============================================================
-# Stage 2: Build Go binary with embedded static files
+# Stage 2: Build Go binary
 # ============================================================
 FROM golang:1.24-alpine AS go-builder
 
@@ -32,8 +32,6 @@ COPY cmd/ ./cmd/
 COPY internal/ ./internal/
 COPY static/ ./static/
 COPY --from=frontend-builder /src/web/out ./static/out
-
-RUN ls -la ./static/out/ | head -5
 
 ARG VERSION=dev
 ARG COMMIT=unknown

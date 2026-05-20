@@ -13,7 +13,7 @@ import {
     Zap,
     FlaskConical,
     Loader2,
-    ArrowRightLeft,
+    Shuffle,
 } from 'lucide-react';
 import { useUpdateChannel, useDeleteChannel, useTestChannel, type Channel, type UpdateChannelRequest, type TestChannelResponse } from '@/api/endpoints/channel';
 import {
@@ -212,7 +212,7 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
                             <div className="max-h-[60vh] overflow-y-auto space-y-4 sm:space-y-5">
                                 {channel.passthrough && (
                                     <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-3 flex items-center gap-2">
-                                        <ArrowRightLeft className="size-4 text-amber-500 shrink-0" />
+                                        <Shuffle className="size-4 text-amber-500 shrink-0" />
                                         <span className="text-sm font-medium text-amber-700 dark:text-amber-400">{t('passthroughEnabled')}</span>
                                     </div>
                                 )}

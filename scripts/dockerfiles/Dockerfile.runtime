@@ -1,0 +1,17 @@
+FROM alpine:3.21
+
+RUN apk add --no-cache ca-certificates tzdata su-exec wget && \
+    ln -fs /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
+    echo "Asia/Shanghai" > /etc/timezone
+
+WORKDIR /app
+RUN mkdir -p /app/data
+
+COPY octopus /app/octopus
+COPY scripts/dockerfiles/entrypoint.sh /entrypoint.sh
+RUN chmod +x /app/octopus /entrypoint.sh
+
+ENV TZ=Asia/Shanghai
+EXPOSE 8080
+VOLUME ["/app/data"]
+ENTRYPOINT ["/entrypoint.sh"]

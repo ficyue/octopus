@@ -1,6 +1,7 @@
 package relay
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -34,6 +35,10 @@ type RelayMetrics struct {
 
 	// 参数覆盖
 	ParamOverride string
+
+	// 透传模式原始数据，用于日志记录
+	PassthroughRequest  []byte
+	PassthroughResponse []byte
 }
 
 func NewRelayMetrics(apiKeyID int, requestModel string, req *transformerModel.InternalLLMRequest) *RelayMetrics {
@@ -43,6 +48,15 @@ func NewRelayMetrics(apiKeyID int, requestModel string, req *transformerModel.In
 		StartTime:       time.Now(),
 		InternalRequest: req,
 	}
+}
+
+func (m *RelayMetrics) SetActualModel(model string) {
+	m.ActualModel = model
+}
+
+func (m *RelayMetrics) SetPassthroughBody(request, response []byte) {
+	m.PassthroughRequest = request
+	m.PassthroughResponse = response
 }
 
 func (m *RelayMetrics) SetFirstTokenTime(t time.Time) {
@@ -165,8 +179,10 @@ func (m *RelayMetrics) saveLog(ctx context.Context, err error, duration time.Dur
 		relayLog.Cost = m.Stats.InputCost + m.Stats.OutputCost
 	}
 
-	// 请求内容
-	if m.InternalRequest != nil {
+	// 请求内容：透传模式优先使用原始请求体
+	if len(m.PassthroughRequest) > 0 {
+		relayLog.RequestContent = string(m.PassthroughRequest)
+	} else if m.InternalRequest != nil {
 		reqJSON, jsonErr := json.Marshal(m.InternalRequest)
 		if jsonErr != nil {
 			relayLog.RequestContent = string(reqJSON)
@@ -192,8 +208,16 @@ func (m *RelayMetrics) saveLog(ctx context.Context, err error, duration time.Dur
 		}
 	}
 
-	// 响应内容
-	if m.InternalResponse != nil {
+	// 响应内容：透传模式下当 TransformResponse 无法解析时，使用原始响应体
+	if len(m.PassthroughResponse) > 0 && m.InternalResponse == nil {
+		// 透传模式但未能解析为内部格式，使用原始响应体（截断过长的内容）
+		maxRespLen := 50000
+		if len(m.PassthroughResponse) > maxRespLen {
+			relayLog.ResponseContent = string(m.PassthroughResponse[:maxRespLen])
+		} else {
+			relayLog.ResponseContent = string(m.PassthroughResponse)
+		}
+	} else if m.InternalResponse != nil {
 		respForLog := m.filterResponseForLog(m.InternalResponse)
 		if respJSON, jsonErr := json.Marshal(respForLog); jsonErr == nil {
 			if m.InternalResponse.Usage != nil && m.InternalResponse.Usage.AnthropicUsage {
@@ -213,6 +237,43 @@ func (m *RelayMetrics) saveLog(ctx context.Context, err error, duration time.Dur
 
 	if logErr := op.RelayLogAdd(ctx, relayLog); logErr != nil {
 		log.Warnf("failed to save relay log: %v", logErr)
+	}
+}
+
+// ExtractUsageFromRawResponse 从原始响应体中提取 usage 信息，用于透传模式
+func (m *RelayMetrics) ExtractUsageFromRawResponse(respBody []byte, isStream bool) {
+	if len(respBody) == 0 {
+		return
+	}
+
+	if isStream {
+		// 流式响应：逐行解析 SSE 事件，提取最后一个包含 usage 的 data
+		lines := bytes.Split(respBody, []byte("\n"))
+		for i := len(lines) - 1; i >= 0; i-- {
+			line := bytes.TrimSpace(lines[i])
+			if bytes.HasPrefix(line, []byte("data:")) || bytes.HasPrefix(line, []byte("data: ")) {
+				payload := bytes.TrimPrefix(line, []byte("data:"))
+				payload = bytes.TrimPrefix(payload, []byte(" "))
+				if bytes.Equal(payload, []byte("[DONE]")) {
+					continue
+				}
+				var usageRaw struct {
+					Usage *transformerModel.Usage `json:"usage"`
+				}
+				if err := json.Unmarshal(payload, &usageRaw); err == nil && usageRaw.Usage != nil {
+					m.SetInternalResponse(&transformerModel.InternalLLMResponse{Usage: usageRaw.Usage}, m.ActualModel)
+					return
+				}
+			}
+		}
+	} else {
+		// 非流式响应：直接从 JSON 中提取 usage
+		var respRaw struct {
+			Usage *transformerModel.Usage `json:"usage"`
+		}
+		if err := json.Unmarshal(respBody, &respRaw); err == nil && respRaw.Usage != nil {
+			m.SetInternalResponse(&transformerModel.InternalLLMResponse{Usage: respRaw.Usage}, m.ActualModel)
+		}
 	}
 }
 

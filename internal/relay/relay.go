@@ -415,11 +415,20 @@ func (ra *relayAttempt) forwardPassthrough(ctx context.Context) (int, error) {
 		return 0, fmt.Errorf("failed to read passthrough response: %w", err)
 	}
 
+	// 始终设置 ActualModel，确保日志中记录正确的实际模型名
+	ra.metrics.SetActualModel(ra.internalRequest.Model)
+
 	// 尝试解析响应统计信息（Usage），不阻塞主流程
 	response.Body = io.NopCloser(bytes.NewReader(respBody))
 	if internalResp, parseErr := ra.outAdapter.TransformResponse(ctx, response); parseErr == nil && internalResp != nil && internalResp.Usage != nil {
 		ra.metrics.SetInternalResponse(internalResp, ra.internalRequest.Model)
+	} else {
+		// TransformResponse 失败（如流式响应场景），尝试直接从响应体解析 usage
+		ra.metrics.ExtractUsageFromRawResponse(respBody, ra.internalRequest.Stream != nil && *ra.internalRequest.Stream)
 	}
+
+	// 保存原始请求/响应体用于日志记录
+	ra.metrics.SetPassthroughBody(rawBody, respBody)
 
 	// 透传响应到客户端：复制状态码、响应头、响应体
 	for key, values := range response.Header {

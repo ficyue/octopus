@@ -1,23 +1,24 @@
 # ============================================================
-# Stage 1: Build frontend (Next.js)
+# Stage 1: Build frontend (Next.js static export)
 # ============================================================
 FROM node:22-alpine AS frontend-builder
 
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
 WORKDIR /src/web
 
-COPY web/pnpm-lock.yaml web/pnpm-workspace.yaml web/package.json ./
+COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./
+RUN pnpm install --frozen-lockfile
+
 COPY web/tsconfig.json web/next.config.ts web/components.json web/postcss.config.mjs web/eslint.config.mjs ./
-
-RUN corepack enable && pnpm install --frozen-lockfile
-
 COPY web/public ./public
 COPY web/src ./src
 
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN pnpm run build
+RUN pnpm run build && ls -la /src/web/out/
 
 # ============================================================
-# Stage 2: Build Go binary
+# Stage 2: Build Go binary with embedded static files
 # ============================================================
 FROM golang:1.24-alpine AS go-builder
 
@@ -29,10 +30,10 @@ RUN go mod download
 COPY main.go ./
 COPY cmd/ ./cmd/
 COPY internal/ ./internal/
-
-# Embed frontend static files
+COPY static/ ./static/
 COPY --from=frontend-builder /src/web/out ./static/out
-COPY static/static.go ./static/
+
+RUN ls -la ./static/out/ | head -5
 
 ARG VERSION=dev
 ARG COMMIT=unknown
@@ -47,7 +48,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
       main.go
 
 # ============================================================
-# Stage 3: Runtime image
+# Stage 3: Runtime
 # ============================================================
 FROM alpine:3.21
 

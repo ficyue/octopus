@@ -79,6 +79,7 @@ export function CreateDialogContent() {
                         auto_group: AutoGroupType.None,
                         enabled: true,
                         proxy: false,
+                        passthrough: false,
                         match_regex: '',
                     });
                     setIsOpen(false);

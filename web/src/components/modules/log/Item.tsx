@@ -488,12 +488,13 @@ export function LogCard({ log }: { log: RelayLog }) {
                                 <Cpu className="size-3.5 text-blue-500" />
                                 <span>{t('totalTime')}: {formatDuration(log.use_time)}</span>
                             </div>
-                            <div className="flex items-center gap-1.5">
+                            <span className="text-muted-foreground/50">|</span>
+                            <span className="flex items-center gap-1">
                                 <DollarSign className="size-3.5 text-emerald-500" />
                                 <span className="font-medium text-emerald-600 dark:text-emerald-400">
                                     {t('cost')}: {Number(log.cost).toFixed(6)}
                                 </span>
-                            </div>
+                            </span>
                         </div>
                     </MorphingDialogContent>
                 </MorphingDialogContainer>

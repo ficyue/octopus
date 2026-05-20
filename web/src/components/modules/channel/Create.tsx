@@ -56,6 +56,7 @@ export function CreateDialogContent() {
                 model: formData.model,
                 custom_model: formData.custom_model,
                 proxy: formData.proxy,
+                passthrough: formData.passthrough,
                 auto_sync: formData.auto_sync,
                 auto_group: formData.auto_group,
                 custom_header: normalizedHeaders,

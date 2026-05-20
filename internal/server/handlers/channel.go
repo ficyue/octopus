@@ -268,7 +268,7 @@ func testChannel(c *gin.Context) {
 		}
 	}
 
-	httpClient, err := helper.ChannelHttpClient(&channel)
+	httpClient, err := helper.ChannelHttpClient(channel)
 	if err != nil {
 		resp.Error(c, http.StatusInternalServerError, fmt.Sprintf("failed to create http client: %v", err))
 		return
@@ -311,8 +311,8 @@ func testChannel(c *gin.Context) {
 	}
 
 	if internalResp.Usage != nil {
-		result.TokensIn = internalResp.Usage.PromptTokens
-		result.TokensOut = internalResp.Usage.CompletionTokens
+		result.TokensIn = int(internalResp.Usage.PromptTokens)
+		result.TokensOut = int(internalResp.Usage.CompletionTokens)
 	}
 
 	if len(internalResp.Choices) > 0 && internalResp.Choices[0].Message != nil {

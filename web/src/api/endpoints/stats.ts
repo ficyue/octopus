@@ -91,6 +91,7 @@ export function useStatsDaily() {
         select: (data) => data.map((item): StatsDailyFormatted => ({
             input_token: formatCount(item.input_token),
             output_token: formatCount(item.output_token),
+            cached_tokens: formatCount(item.cached_tokens || 0),
             total_token: formatCount(item.input_token + item.output_token),
             input_cost: formatMoney(item.input_cost),
             output_cost: formatMoney(item.output_cost),

@@ -212,6 +212,7 @@ export function useAPIKeyStats() {
             api_key_id: data.api_key_id,
             input_token: formatCount(data.input_token),
             output_token: formatCount(data.output_token),
+            cached_tokens: formatCount(data.cached_tokens || 0),
             total_token: formatCount(data.input_token + data.output_token),
             input_cost: formatMoney(data.input_cost),
             output_cost: formatMoney(data.output_cost),

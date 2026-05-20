@@ -1,6 +1,3 @@
-# ============================================================
-# Stage 1: Build frontend
-# ============================================================
 FROM node:22-alpine AS frontend-builder
 
 RUN corepack enable && corepack prepare pnpm@latest --activate
@@ -14,12 +11,8 @@ COPY web/tsconfig.json web/next.config.ts web/components.json web/postcss.config
 COPY web/public ./public
 COPY web/src ./src
 
-ENV NEXT_TELEMETRY_DISABLED=1
-RUN pnpm run build
+RUN pnpm run build 2>&1; RC=$?; echo "=== NEXT BUILD EXIT CODE: $RC ==="; exit $RC
 
-# ============================================================
-# Stage 2: Build Go binary
-# ============================================================
 FROM golang:1.24-alpine AS go-builder
 
 WORKDIR /src
@@ -40,14 +33,8 @@ ENV CGO_ENABLED=0
 
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg \
-    go build \
-      -ldflags="-X 'github.com/bestruirui/octopus/internal/conf.Version=${VERSION}' -X 'github.com/bestruirui/octopus/internal/conf.BuildTime=${BUILD_TIME}' -X 'github.com/bestruirui/octopus/internal/conf.Commit=${COMMIT}' -s -w" \
-      -o /octopus \
-      main.go
+    go build -ldflags="-s -w" -o /octopus main.go
 
-# ============================================================
-# Stage 3: Runtime
-# ============================================================
 FROM alpine:3.21
 
 RUN apk add --no-cache ca-certificates tzdata su-exec wget && \
@@ -62,10 +49,6 @@ COPY scripts/dockerfiles/entrypoint.sh /entrypoint.sh
 RUN chmod +x /app/octopus /entrypoint.sh
 
 ENV TZ=Asia/Shanghai
-ENV OCTOPUS_SERVER_HOST=0.0.0.0
-ENV OCTOPUS_SERVER_PORT=8080
-
 EXPOSE 8080
 VOLUME ["/app/data"]
-
 ENTRYPOINT ["/entrypoint.sh"]

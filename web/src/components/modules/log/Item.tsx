@@ -264,12 +264,10 @@ export function LogCard({ log }: { log: RelayLog }) {
                                     <ArrowUpFromLine className="size-3.5 shrink-0 text-purple-500" />
                                     <span>{t('output')} {log.output_tokens.toLocaleString()}</span>
                                 </div>
-                                {(log.cached_tokens || 0) > 0 && (
-                                    <div className="flex items-center gap-1.5">
-                                        <Database className="size-3.5 shrink-0 text-amber-500" />
-                                        <span>{t('cachedTokens')} {log.cached_tokens.toLocaleString()}</span>
-                                    </div>
-                                )}
+                                <div className="flex items-center gap-1.5">
+                                    <Database className="size-3.5 shrink-0 text-amber-500" />
+                                    <span>{t('cachedTokens')} {(log.cached_tokens || 0).toLocaleString()}</span>
+                                </div>
                                 <div className="flex items-center gap-1.5">
                                     <DollarSign className="size-3.5 shrink-0 text-emerald-500" />
                                     <span className="font-medium text-emerald-600 dark:text-emerald-400">

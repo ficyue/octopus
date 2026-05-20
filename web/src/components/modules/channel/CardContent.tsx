@@ -8,12 +8,11 @@ import {
     Clock,
     Activity,
     TrendingUp,
-    Globe,
     Key,
     Zap,
     FlaskConical,
     Loader2,
-    Globe,
+    GitCompare,
 } from 'lucide-react';
 import { useUpdateChannel, useDeleteChannel, useTestChannel, type Channel, type UpdateChannelRequest, type TestChannelResponse } from '@/api/endpoints/channel';
 import {
@@ -212,7 +211,7 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
                             <div className="max-h-[60vh] overflow-y-auto space-y-4 sm:space-y-5">
                                 {channel.passthrough && (
                                     <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-3 flex items-center gap-2">
-                                        <Globe className="size-4 text-amber-500 shrink-0" />
+                                        <GitCompare className="size-4 text-amber-500 shrink-0" />
                                         <span className="text-sm font-medium text-amber-700 dark:text-amber-400">{t('passthroughEnabled')}</span>
                                     </div>
                                 )}
@@ -358,7 +357,7 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
                                 {/* Base URLs */}
                                 <section className="space-y-3">
                                     <h4 className="flex items-center gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                                        <Globe className="size-3.5" />
+                                        <GitCompare className="size-3.5" />
                                         {t('sections.baseUrls')}
                                     </h4>
                                     <div className="rounded-2xl border bg-card overflow-hidden">

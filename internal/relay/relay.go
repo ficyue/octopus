@@ -391,6 +391,18 @@ func (ra *relayAttempt) forwardPassthrough(ctx context.Context) (int, error) {
 		return 0, fmt.Errorf("upstream error: %d: %s", response.StatusCode, string(body))
 	}
 
+	// 读取完整响应体，同时解析 usage 用于统计
+	respBody, err := io.ReadAll(response.Body)
+	if err != nil {
+		return 0, fmt.Errorf("failed to read passthrough response: %w", err)
+	}
+
+	// 尝试解析响应统计信息（Usage），不阻塞主流程
+	response.Body = io.NopCloser(bytes.NewReader(respBody))
+	if internalResp, parseErr := ra.outAdapter.TransformResponse(ctx, response); parseErr == nil && internalResp != nil && internalResp.Usage != nil {
+		ra.metrics.SetInternalResponse(internalResp, ra.internalRequest.Model)
+	}
+
 	// 透传响应到客户端：复制状态码、响应头、响应体
 	for key, values := range response.Header {
 		for _, value := range values {
@@ -399,7 +411,7 @@ func (ra *relayAttempt) forwardPassthrough(ctx context.Context) (int, error) {
 	}
 	ra.c.Status(response.StatusCode)
 
-	_, err = io.Copy(ra.c.Writer, response.Body)
+	_, err = io.Copy(ra.c.Writer, bytes.NewReader(respBody))
 	if err != nil {
 		log.Warnf("failed to copy passthrough response body: %v", err)
 	}

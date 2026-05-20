@@ -71,6 +71,7 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 		requestModel:    requestModel,
 		iter:            iter,
 		rawBody:         rawBody,
+		inboundType:     inboundType,
 	}
 
 	var lastErr error
@@ -251,8 +252,8 @@ func parseRequest(inboundType inbound.InboundType, c *gin.Context) (*model.Inter
 func (ra *relayAttempt) forward() (int, error) {
 	ctx := ra.c.Request.Context()
 
-	// 透传模式：直接转发客户端原始请求，跳过协议转换
-	if ra.channel.Passthrough {
+	// 透传模式：仅在客户端格式与渠道格式一致时生效
+	if ra.channel.Passthrough && ra.isPassthroughCompatible() {
 		return ra.forwardPassthrough(ctx)
 	}
 
@@ -328,6 +329,23 @@ func (ra *relayAttempt) forward() (int, error) {
 		return 0, err
 	}
 	return response.StatusCode, nil
+}
+
+// isPassthroughCompatible 检查客户端入站格式是否与渠道出站格式一致
+// 一致时才可透传，否则仍需协议转换
+func (ra *relayAttempt) isPassthroughCompatible() bool {
+	switch ra.inboundType {
+	case inbound.InboundTypeOpenAIChat:
+		return ra.channel.Type == outbound.OutboundTypeOpenAIChat
+	case inbound.InboundTypeOpenAIResponse:
+		return ra.channel.Type == outbound.OutboundTypeOpenAIResponse
+	case inbound.InboundTypeAnthropic:
+		return ra.channel.Type == outbound.OutboundTypeAnthropic
+	case inbound.InboundTypeOpenAIEmbedding:
+		return ra.channel.Type == outbound.OutboundTypeOpenAIEmbedding
+	default:
+		return false
+	}
 }
 
 // forwardPassthrough 透传模式：直接转发客户端原始请求和原始响应

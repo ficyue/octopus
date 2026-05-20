@@ -62,6 +62,7 @@ type relayRequest struct {
 	requestModel    string
 	iter            *balancer.Iterator
 	rawBody         []byte
+	inboundType     inbound.InboundType
 }
 
 // relayAttempt 尝试级上下文

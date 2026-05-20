@@ -1,11 +1,6 @@
 services:
   octopus:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        VERSION: latest
-    image: octopus:latest
+    image: ghcr.io/ficyue/octopus:latest
     ports:
       - "8080:8080"
     volumes:

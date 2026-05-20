@@ -235,7 +235,7 @@ export function LogCard({ log }: { log: RelayLog }) {
                                     <Pin className="size-3.5 shrink-0 text-amber-500" />
                                 )}
                             </div>
-                            <div className="grid grid-cols-2 md:grid-cols-7 gap-x-4 gap-y-2 text-xs tabular-nums text-muted-foreground">
+                            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs tabular-nums text-muted-foreground">
                                 <div className="flex items-center gap-1.5">
                                     <Clock className="size-3.5 shrink-0" style={{ color: brandColor }} />
                                     <span>{formatTime(log.time)}</span>
@@ -256,7 +256,7 @@ export function LogCard({ log }: { log: RelayLog }) {
                                     <Cpu className="size-3.5 shrink-0 text-blue-500" />
                                     <span>{t('totalTime')} {formatDuration(log.use_time)}</span>
                                 </div>
-                                <div className="col-span-2 md:col-span-7 flex items-center gap-2 flex-wrap">
+                                <div className="flex items-center gap-2">
                                     <span className="flex items-center gap-1">
                                         <ArrowDownToLine className="size-3.5 shrink-0 text-green-500" />
                                         <span>{log.input_tokens.toLocaleString()}</span>

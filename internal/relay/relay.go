@@ -626,9 +626,11 @@ func (ra *relayAttempt) handleResponse(ctx context.Context, response *http.Respo
 func (ra *relayAttempt) collectResponse() {
 	internalResponse, err := ra.inAdapter.GetInternalResponse(ra.c.Request.Context())
 	if err != nil || internalResponse == nil {
+		log.Debugf("collectResponse: no internal response (err=%v, resp=%v)", err, internalResponse != nil)
 		return
 	}
 
+	log.Debugf("collectResponse: got internal response, usage=%v", internalResponse.Usage != nil)
 	ra.metrics.SetInternalResponse(internalResponse, ra.internalRequest.Model)
 }
 

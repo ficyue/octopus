@@ -251,8 +251,17 @@ func (m *RelayMetrics) ExtractUsageFromRawResponse(respBody []byte, isStream boo
 		var usageRaw struct {
 			Usage *transformerModel.Usage `json:"usage"`
 		}
-		if err := json.Unmarshal(data, &usageRaw); err == nil && usageRaw.Usage != nil {
+		if err := json.Unmarshal(data, &usageRaw); err != nil {
+			log.Debugf("passthrough extractUsage: unmarshal failed: %v", err)
+		} else if usageRaw.Usage != nil {
+			cachedTokens := int64(0)
+			if usageRaw.Usage.PromptTokensDetails != nil {
+				cachedTokens = usageRaw.Usage.PromptTokensDetails.CachedTokens
+			}
+			log.Debugf("passthrough extractUsage: found usage, prompt=%d, completion=%d, cached=%d", usageRaw.Usage.PromptTokens, usageRaw.Usage.CompletionTokens, cachedTokens)
 			m.SetInternalResponse(&transformerModel.InternalLLMResponse{Usage: usageRaw.Usage}, m.ActualModel)
+		} else {
+			log.Debugf("passthrough extractUsage: usage is nil in parsed data")
 		}
 	}
 

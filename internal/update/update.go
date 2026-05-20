@@ -2,8 +2,6 @@ package update
 
 import (
 	"fmt"
-
-	"github.com/bestruirui/octopus/internal/utils/log"
 )
 
 type LatestInfo struct {

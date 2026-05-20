@@ -246,13 +246,14 @@ func (m *RelayMetrics) ExtractUsageFromRawResponse(respBody []byte, isStream boo
 		return
 	}
 
-	// extractUsage 从 JSON 数据中提取 usage
+	// extractUsage 从 JSON 数据中提取 usage，兼容多种响应格式
 	extractUsage := func(data []byte) {
+		// 先尝试顶层 usage 字段（OpenAI Chat 格式）
 		var usageRaw struct {
 			Usage *transformerModel.Usage `json:"usage"`
 		}
 		if err := json.Unmarshal(data, &usageRaw); err != nil {
-			log.Debugf("passthrough extractUsage: unmarshal failed: %v", err)
+			log.Debugf("passthrough extractUsage: unmarshal failed: %v, data_preview: %s", err, string(data[:min(len(data), 200)]))
 		} else if usageRaw.Usage != nil {
 			cachedTokens := int64(0)
 			if usageRaw.Usage.PromptTokensDetails != nil {
@@ -261,7 +262,26 @@ func (m *RelayMetrics) ExtractUsageFromRawResponse(respBody []byte, isStream boo
 			log.Debugf("passthrough extractUsage: found usage, prompt=%d, completion=%d, cached=%d", usageRaw.Usage.PromptTokens, usageRaw.Usage.CompletionTokens, cachedTokens)
 			m.SetInternalResponse(&transformerModel.InternalLLMResponse{Usage: usageRaw.Usage}, m.ActualModel)
 		} else {
-			log.Debugf("passthrough extractUsage: usage is nil in parsed data")
+			// 尝试 OpenAI Responses API 格式：message_delta 事件中的 usage
+			var deltaUsage struct {
+				Type  string `json:"type"`
+				Usage struct {
+					InputTokens  int64 `json:"input_tokens"`
+					OutputTokens int64 `json:"output_tokens"`
+				} `json:"usage"`
+			}
+			if err := json.Unmarshal(data, &deltaUsage); err == nil && deltaUsage.Usage.InputTokens > 0 {
+				log.Debugf("passthrough extractUsage: found responses API usage, input=%d, output=%d", deltaUsage.Usage.InputTokens, deltaUsage.Usage.OutputTokens)
+				m.SetInternalResponse(&transformerModel.InternalLLMResponse{
+					Usage: &transformerModel.Usage{
+						PromptTokens:     deltaUsage.Usage.InputTokens,
+						CompletionTokens: deltaUsage.Usage.OutputTokens,
+						TotalTokens:      deltaUsage.Usage.InputTokens + deltaUsage.Usage.OutputTokens,
+					},
+				}, m.ActualModel)
+			} else {
+				log.Debugf("passthrough extractUsage: usage is nil in parsed data, data_preview: %s", string(data[:min(len(data), 200)]))
+			}
 		}
 	}
 

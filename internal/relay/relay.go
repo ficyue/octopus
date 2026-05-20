@@ -363,11 +363,19 @@ func (ra *relayAttempt) forwardPassthrough(ctx context.Context) (int, error) {
 
 	// 如果渠道配置了具体模型名，替换请求体中的 model 字段
 	if ra.internalRequest.Model != "" {
-		// 简单替换：在 JSON 中查找 "model":"..." 并替换
-		// 使用标准库 json 做精确替换
 		var bodyMap map[string]any
 		if err := json.Unmarshal(rawBody, &bodyMap); err == nil {
 			bodyMap["model"] = ra.internalRequest.Model
+			// 透传模式下确保请求中包含 stream_options.include_usage=true
+			if streamVal, ok := bodyMap["stream"]; ok {
+				if s, ok := streamVal.(bool); ok && s {
+					if _, hasSO := bodyMap["stream_options"]; !hasSO {
+						bodyMap["stream_options"] = map[string]any{"include_usage": true}
+					} else if so, ok := bodyMap["stream_options"].(map[string]any); ok {
+						so["include_usage"] = true
+					}
+				}
+			}
 			if newBody, err := json.Marshal(bodyMap); err == nil {
 				rawBody = newBody
 			}

@@ -248,41 +248,65 @@ func (m *RelayMetrics) ExtractUsageFromRawResponse(respBody []byte, isStream boo
 
 	// extractUsage 从 JSON 数据中提取 usage，兼容多种响应格式
 	extractUsage := func(data []byte) {
-		// 先尝试顶层 usage 字段（OpenAI Chat 格式）
-		var usageRaw struct {
+		preview := string(data)
+		if len(preview) > 200 {
+			preview = preview[:200]
+		}
+
+		// 1. OpenAI Chat Completions 格式：顶层 usage 字段
+		var chatUsage struct {
 			Usage *transformerModel.Usage `json:"usage"`
 		}
-		if err := json.Unmarshal(data, &usageRaw); err != nil {
-			log.Debugf("passthrough extractUsage: unmarshal failed: %v, data_preview: %s", err, string(data[:min(len(data), 200)]))
-		} else if usageRaw.Usage != nil {
+		if err := json.Unmarshal(data, &chatUsage); err == nil && chatUsage.Usage != nil {
 			cachedTokens := int64(0)
-			if usageRaw.Usage.PromptTokensDetails != nil {
-				cachedTokens = usageRaw.Usage.PromptTokensDetails.CachedTokens
+			if chatUsage.Usage.PromptTokensDetails != nil {
+				cachedTokens = chatUsage.Usage.PromptTokensDetails.CachedTokens
 			}
-			log.Debugf("passthrough extractUsage: found usage, prompt=%d, completion=%d, cached=%d", usageRaw.Usage.PromptTokens, usageRaw.Usage.CompletionTokens, cachedTokens)
-			m.SetInternalResponse(&transformerModel.InternalLLMResponse{Usage: usageRaw.Usage}, m.ActualModel)
-		} else {
-			// 尝试 OpenAI Responses API 格式：message_delta 事件中的 usage
-			var deltaUsage struct {
-				Type  string `json:"type"`
-				Usage struct {
-					InputTokens  int64 `json:"input_tokens"`
-					OutputTokens int64 `json:"output_tokens"`
-				} `json:"usage"`
-			}
-			if err := json.Unmarshal(data, &deltaUsage); err == nil && deltaUsage.Usage.InputTokens > 0 {
-				log.Debugf("passthrough extractUsage: found responses API usage, input=%d, output=%d", deltaUsage.Usage.InputTokens, deltaUsage.Usage.OutputTokens)
-				m.SetInternalResponse(&transformerModel.InternalLLMResponse{
-					Usage: &transformerModel.Usage{
-						PromptTokens:     deltaUsage.Usage.InputTokens,
-						CompletionTokens: deltaUsage.Usage.OutputTokens,
-						TotalTokens:      deltaUsage.Usage.InputTokens + deltaUsage.Usage.OutputTokens,
-					},
-				}, m.ActualModel)
-			} else {
-				log.Debugf("passthrough extractUsage: usage is nil in parsed data, data_preview: %s", string(data[:min(len(data), 200)]))
-			}
+			log.Debugf("passthrough extractUsage: found chat usage, prompt=%d, completion=%d, cached=%d", chatUsage.Usage.PromptTokens, chatUsage.Usage.CompletionTokens, cachedTokens)
+			m.SetInternalResponse(&transformerModel.InternalLLMResponse{Usage: chatUsage.Usage}, m.ActualModel)
+			return
 		}
+
+		// 2. OpenAI Responses API 流式格式：response.completed 事件中 response.usage
+		var respEvent struct {
+			Type     string `json:"type"`
+			Response struct {
+				Usage *struct {
+					InputTokens       int64 `json:"input_tokens"`
+					OutputTokens      int64 `json:"output_tokens"`
+					TotalTokens       int64 `json:"total_tokens"`
+					InputTokenDetails struct {
+						CachedTokens int64 `json:"cached_tokens"`
+					} `json:"input_tokens_details"`
+					OutputTokenDetails struct {
+						ReasoningTokens int64 `json:"reasoning_tokens"`
+					} `json:"output_tokens_details"`
+				} `json:"usage"`
+			} `json:"response"`
+		}
+		if err := json.Unmarshal(data, &respEvent); err == nil && respEvent.Response.Usage != nil {
+			u := respEvent.Response.Usage
+			log.Debugf("passthrough extractUsage: found responses API usage, input=%d, output=%d, cached=%d", u.InputTokens, u.OutputTokens, u.InputTokenDetails.CachedTokens)
+			usage := &transformerModel.Usage{
+				PromptTokens:     u.InputTokens,
+				CompletionTokens: u.OutputTokens,
+				TotalTokens:      u.TotalTokens,
+			}
+			if u.InputTokenDetails.CachedTokens > 0 {
+				usage.PromptTokensDetails = &transformerModel.PromptTokensDetails{
+					CachedTokens: u.InputTokenDetails.CachedTokens,
+				}
+			}
+			if u.OutputTokenDetails.ReasoningTokens > 0 {
+				usage.CompletionTokensDetails = &transformerModel.CompletionTokensDetails{
+					ReasoningTokens: u.OutputTokenDetails.ReasoningTokens,
+				}
+			}
+			m.SetInternalResponse(&transformerModel.InternalLLMResponse{Usage: usage}, m.ActualModel)
+			return
+		}
+
+		log.Debugf("passthrough extractUsage: no usage found in data, preview: %s", preview)
 	}
 
 	if isStream {

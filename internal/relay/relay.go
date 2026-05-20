@@ -428,6 +428,7 @@ func (ra *relayAttempt) forwardPassthrough(ctx context.Context) (int, error) {
 
 	// 尝试解析响应统计信息（Usage）
 	isStream := ra.internalRequest.Stream != nil && *ra.internalRequest.Stream
+	log.Debugf("passthrough: isStream=%v, respBodyLen=%d", isStream, len(respBody))
 
 	if !isStream {
 		// 非流式：用 TransformResponse 解析完整响应
@@ -447,6 +448,11 @@ func (ra *relayAttempt) forwardPassthrough(ctx context.Context) (int, error) {
 		}
 	} else {
 		// 流式：从 SSE 事件中提取 usage
+		if len(respBody) > 200 {
+			log.Debugf("passthrough: stream respBody preview: %s", string(respBody[:200]))
+		} else {
+			log.Debugf("passthrough: stream respBody: %s", string(respBody))
+		}
 		ra.metrics.ExtractUsageFromRawResponse(respBody, true)
 	}
 

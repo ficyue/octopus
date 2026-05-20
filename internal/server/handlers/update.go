@@ -15,16 +15,8 @@ func init() {
 	router.NewGroupRouter("/api/v1/update").
 		Use(middleware.Auth()).
 		AddRoute(
-			router.NewRoute("", http.MethodGet).
-				Handle(latest),
-		).
-		AddRoute(
 			router.NewRoute("/now-version", http.MethodGet).
 				Handle(getNowVersion),
-		).
-		AddRoute(
-			router.NewRoute("", http.MethodPost).
-				Handle(updateFunc),
 		)
 }
 

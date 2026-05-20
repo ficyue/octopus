@@ -32,6 +32,10 @@ func init() {
 		AddRoute(
 			router.NewRoute("/apikey", http.MethodGet).
 				Handle(getStatsAPIKey),
+		).
+		AddRoute(
+			router.NewRoute("/channel", http.MethodGet).
+				Handle(getStatsChannelPeriod),
 		)
 }
 
@@ -58,4 +62,14 @@ func getStatsTotal(c *gin.Context) {
 
 func getStatsAPIKey(c *gin.Context) {
 	resp.Success(c, op.StatsAPIKeyList())
+}
+
+func getStatsChannelPeriod(c *gin.Context) {
+	period := c.DefaultQuery("period", "today")
+	stats, err := op.StatsChannelPeriod(c.Request.Context(), period)
+	if err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	resp.Success(c, stats)
 }

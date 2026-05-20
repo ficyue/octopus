@@ -473,3 +473,65 @@ func statsRefreshCache(ctx context.Context) error {
 
 	return nil
 }
+
+// StatsChannelPeriod 按时间周期聚合渠道统计数据
+// period: "today" | "7d" | "30d"
+func StatsChannelPeriod(ctx context.Context, period string) ([]model.StatsChannelPeriod, error) {
+	now := time.Now()
+	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	var since time.Time
+	switch period {
+	case "today":
+		since = todayStart
+	case "7d":
+		since = todayStart.AddDate(0, 0, -7)
+	case "30d":
+		since = todayStart.AddDate(0, 0, -30)
+	default:
+		since = todayStart
+	}
+
+	dbConn := db.GetDB().WithContext(ctx)
+
+	type Row struct {
+		ChannelId   int
+		ChannelName string
+		ReqCount    int64
+		InputTokens int64
+		OutputTokens int64
+		TotalMs    int64
+		TotalCost float64
+	}
+
+	var rows []Row
+	err := dbConn.Model(&model.RelayLog{}).
+		Select("channel_id, channel_name, count(*) as req_count, sum(input_tokens) as input_tokens, sum(output_tokens) as output_tokens, sum(use_time) as total_ms, sum(cost) as total_cost").
+		Where("time >= ? AND channel_id > 0", since.Unix()).
+		Group("channel_id, channel_name").
+		Find(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]model.StatsChannelPeriod, 0, len(rows))
+	for _, r := range rows {
+		totalSec := float64(r.TotalMs) / 1000.0
+		tps := 0.0
+		if totalSec > 0 && r.OutputTokens > 0 {
+			tps = float64(r.OutputTokens) / totalSec
+		}
+		result = append(result, model.StatsChannelPeriod{
+			ChannelID:    r.ChannelId,
+			ChannelName:  r.ChannelName,
+			InputTokens:  r.InputTokens,
+			OutputTokens: r.OutputTokens,
+			TotalTokens:  r.InputTokens + r.OutputTokens,
+			TotalCost:    r.TotalCost,
+			TotalMs:      r.TotalMs,
+			AvgLatency:   func() int64 { if r.ReqCount > 0 { return r.TotalMs / r.ReqCount } else { return 0 } }(),
+			TokensPerSec: tps,
+			Requests:     r.ReqCount,
+		})
+	}
+	return result, nil
+}

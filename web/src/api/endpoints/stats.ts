@@ -188,3 +188,29 @@ export function useStatsAPIKey() {
         refetchOnMount: 'always',
     });
 }
+export interface StatsChannelPeriod {
+    channel_id: number;
+    channel_name: string;
+    input_token: number;
+    output_token: number;
+    total_token: number;
+    input_cost: number;
+    output_cost: number;
+    total_cost: number;
+    requests: number;
+    successes: number;
+    failures: number;
+    total_ms: number;
+    avg_latency: number;
+    tokens_per_sec: number;
+}
+
+export function useStatsChannelPeriod(period: string) {
+    return useQuery({
+        queryKey: ['stats', 'channel', period],
+        queryFn: async () => {
+            return apiClient.get<StatsChannelPeriod[]>(`/api/v1/stats/channel?period=${period}`);
+        },
+        refetchInterval: 30000,
+    });
+}

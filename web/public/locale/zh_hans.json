@@ -138,7 +138,11 @@
             "sortByCount": "次数",
             "sortByTokens": "Tokens",
             "noData": "暂无排行数据",
-            "successRate": "成功率"
+            "successRate": "成功率",
+            "sortBySpeed": "速度",
+            "periodToday": "今日",
+            "period7d": "7天",
+            "period30d": "30天"
         }
     },
     "setting": {

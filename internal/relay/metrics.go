@@ -61,16 +61,17 @@ func (m *RelayMetrics) SetInternalResponse(resp *transformerModel.InternalLLMRes
 	m.Stats.InputToken = usage.PromptTokens
 	m.Stats.OutputToken = usage.CompletionTokens
 
-	modelPrice := price.GetLLMPrice(actualModel)
-	if modelPrice == nil {
-		return
-	}
 	if usage.PromptTokensDetails == nil {
 		usage.PromptTokensDetails = &transformerModel.PromptTokensDetails{
 			CachedTokens: 0,
 		}
 	}
 	m.Stats.CachedTokens = usage.PromptTokensDetails.CachedTokens
+
+	modelPrice := price.GetLLMPrice(actualModel)
+	if modelPrice == nil {
+		return
+	}
 	if usage.AnthropicUsage {
 		m.Stats.InputCost = (float64(usage.PromptTokensDetails.CachedTokens)*modelPrice.CacheRead +
 			float64(usage.PromptTokens)*modelPrice.Input +

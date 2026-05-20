@@ -19,8 +19,8 @@ import (
 )
 
 const (
-	updateUrl    = "https://github.com/bestruirui/octopus/releases/latest/download"
-	updateApiUrl = "https://api.github.com/repos/bestruirui/octopus/releases/latest"
+	updateUrl    = "https://github.com/ficyue/octopus/releases/latest/download"
+	updateApiUrl = "https://api.github.com/repos/ficyue/octopus/releases/latest"
 )
 
 type LatestInfo struct {
@@ -77,20 +77,7 @@ func doRequest(url string, useProxy bool) ([]byte, error) {
 }
 
 func GetLatestInfo() (*LatestInfo, error) {
-	body, err := doRequestWithFallback(updateApiUrl)
-	if err != nil {
-		return nil, err
-	}
-
-	var latestInfo LatestInfo
-	if err := json.Unmarshal(body, &latestInfo); err != nil {
-		log.Debugf("unmarshal body failed: %v", err)
-		return nil, err
-	}
-	if latestInfo.Message != "" {
-		return nil, fmt.Errorf("failed to get latest info: %s", latestInfo.Message)
-	}
-	return &latestInfo, nil
+	return nil, fmt.Errorf("auto-update is disabled in this fork")
 }
 
 func unzip(data []byte, dest string) error {

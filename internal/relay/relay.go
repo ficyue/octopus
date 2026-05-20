@@ -337,14 +337,32 @@ func (ra *relayAttempt) forwardPassthrough(ctx context.Context) (int, error) {
 		return 0, fmt.Errorf("no available base URL")
 	}
 
-	// 使用缓存的原始请求体
+	// 使用缓存的原始请求体，并将模型名替换为渠道配置中的实际模型名
 	rawBody := ra.rawBody
 	if rawBody == nil {
 		return 0, fmt.Errorf("raw body not available for passthrough")
 	}
 
-	// 构建出站请求：使用原始 URL 路径拼接
-	fullURL := strings.TrimSuffix(baseUrl, "/") + ra.c.Request.URL.Path
+	// 如果渠道配置了具体模型名，替换请求体中的 model 字段
+	if ra.internalRequest.Model != "" {
+		// 简单替换：在 JSON 中查找 "model":"..." 并替换
+		// 使用标准库 json 做精确替换
+		var bodyMap map[string]any
+		if err := json.Unmarshal(rawBody, &bodyMap); err == nil {
+			bodyMap["model"] = ra.internalRequest.Model
+			if newBody, err := json.Marshal(bodyMap); err == nil {
+				rawBody = newBody
+			}
+		}
+	}
+
+	// 构建出站请求：仅取客户端路径的最后一段 endpoint（去掉 API 前缀）
+	// 例如 /v1/chat/completions → /chat/completions，避免 baseUrl 已含 /v1 时重复
+	clientPath := ra.c.Request.URL.Path
+	if idx := strings.LastIndex(clientPath, "/v1/"); idx != -1 {
+		clientPath = clientPath[idx+3:] // 取 /v1/ 之后的部分 → /chat/completions
+	}
+	fullURL := strings.TrimSuffix(baseUrl, "/") + clientPath
 	if ra.c.Request.URL.RawQuery != "" {
 		fullURL += "?" + ra.c.Request.URL.RawQuery
 	}

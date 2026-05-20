@@ -138,7 +138,11 @@
             "sortByCount": "Count",
             "sortByTokens": "Tokens",
             "noData": "No ranking data",
-            "successRate": "Success Rate"
+            "successRate": "Success Rate",
+            "sortBySpeed": "Speed",
+            "periodToday": "Today",
+            "period7d": "7 Days",
+            "period30d": "30 Days"
         }
     },
     "setting": {

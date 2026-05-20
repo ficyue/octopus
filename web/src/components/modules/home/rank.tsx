@@ -1,46 +1,45 @@
 'use client';
 
-import { useChannelList } from '@/api/endpoints/channel';
+import { useStatsChannelPeriod, type StatsChannelPeriod } from '@/api/endpoints/stats';
 import { useMemo } from 'react';
 import { useTranslations } from 'next-intl';
-import { TrendingUp } from 'lucide-react';
+import { TrendingUp, Gauge } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContents, TabsContent } from '@/components/animate-ui/components/animate/tabs';
-import { useHomeViewStore, type RankSortMode } from '@/components/modules/home/store';
+import { useHomeViewStore, type RankSortMode, type RankPeriod } from '@/components/modules/home/store';
+import { formatMoney, formatCount } from '@/lib/utils';
 
-type ChannelData = NonNullable<ReturnType<typeof useChannelList>['data']>[number];
+function getMedalEmoji(rank: number): string {
+    switch (rank) {
+        case 1: return '🥇';
+        case 2: return '🥈';
+        case 3: return '🥉';
+        default: return '';
+    }
+}
 
 export function Rank() {
-    const { data: channelData } = useChannelList();
     const t = useTranslations('home.rank');
-    const rankSortMode = useHomeViewStore((state) => state.rankSortMode);
-    const setRankSortMode = useHomeViewStore((state) => state.setRankSortMode);
+    const rankSortMode = useHomeViewStore((s) => s.rankSortMode);
+    const setRankSortMode = useHomeViewStore((s) => s.setRankSortMode);
+    const rankPeriod = useHomeViewStore((s) => s.rankPeriod);
+    const setRankPeriod = useHomeViewStore((s) => s.setRankPeriod);
 
-    const rankedByCost = useMemo<ChannelData[]>(() => {
-        if (!channelData) return [];
-        return [...channelData].sort((a, b) => b.formatted.total_cost.raw - a.formatted.total_cost.raw);
-    }, [channelData]);
+    const { data: channels } = useStatsChannelPeriod(rankPeriod);
 
-    const rankedByCount = useMemo<ChannelData[]>(() => {
-        if (!channelData) return [];
-        return [...channelData].sort((a, b) => b.formatted.request_count.raw - a.formatted.request_count.raw);
-    }, [channelData]);
-
-    const rankedByTokens = useMemo<ChannelData[]>(() => {
-        if (!channelData) return [];
-        return [...channelData].sort((a, b) => b.formatted.total_token.raw - a.formatted.total_token.raw);
-    }, [channelData]);
-
-    const getMedalEmoji = (rank: number): string => {
-        switch (rank) {
-            case 1: return '🥇';
-            case 2: return '🥈';
-            case 3: return '🥉';
-            default: return '';
+    const sorted = useMemo<StatsChannelPeriod[]>(() => {
+        if (!channels) return [];
+        const arr = [...channels];
+        switch (rankSortMode) {
+            case 'cost': arr.sort((a, b) => (b.total_cost || 0) - (a.total_cost || 0)); break;
+            case 'count': arr.sort((a, b) => b.requests - a.requests); break;
+            case 'tokens': arr.sort((a, b) => b.total_token - a.total_token); break;
+            case 'speed': arr.sort((a, b) => b.tokens_per_sec - a.tokens_per_sec); break;
         }
-    };
+        return arr;
+    }, [channels, rankSortMode]);
 
-    const renderList = (channels: ChannelData[], mode: RankSortMode) => {
-        if (channels.length === 0) {
+    const renderList = (items: StatsChannelPeriod[]) => {
+        if (items.length === 0) {
             return (
                 <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
                     <TrendingUp className="w-12 h-12 mb-3 opacity-30" />
@@ -49,67 +48,43 @@ export function Rank() {
             );
         }
         return (
-            <div className="space-y-3 max-h-[300px] overflow-y-auto">
-                {channels.map((channel, index) => {
-                    const rank = index + 1;
+            <div className="space-y-2 max-h-[340px] overflow-y-auto">
+                {items.map((ch, idx) => {
+                    const rank = idx + 1;
                     const medal = getMedalEmoji(rank);
-
                     return (
-                        <div
-                            key={channel.raw.id}
-                            className="flex items-center gap-3 p-3 rounded-2xl hover:bg-accent/5 transition-colors"
-                        >
-                            <div className="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-lg shrink-0">
+                        <div key={ch.channel_id} className="flex items-center gap-3 p-2.5 rounded-2xl hover:bg-accent/5 transition-colors">
+                            <div className="w-7 h-7 rounded-lg flex items-center justify-center font-bold text-sm shrink-0">
                                 {medal || rank}
                             </div>
-
                             <div className="flex-1 min-w-0">
-                                <p className="font-medium text-sm truncate">{channel.raw.name}</p>
-                                {mode === 'count' && (() => {
-                                    const successCount = channel.formatted.request_success.raw;
-                                    const failedCount = channel.formatted.request_failed.raw;
-                                    const totalCount = successCount + failedCount;
-                                    const successRate = totalCount > 0 ? (successCount / totalCount) * 100 : 0;
-
-                                    return (
-                                        <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
-                                            <span>{t('successRate')}:</span>
-                                            <span>{successRate.toFixed(1)}%</span>
-                                        </div>
-                                    );
-                                })()}
+                                <p className="font-medium text-sm truncate">{ch.channel_name}</p>
+                                {rankSortMode === 'speed' && (
+                                    <p className="text-xs text-muted-foreground mt-0.5">
+                                        {formatCount(ch.output_token).formatted.value}{formatCount(ch.output_token).formatted.unit} / {ch.avg_latency}ms
+                                    </p>
+                                )}
                             </div>
-
-                            <div className="flex items-center gap-1 text-right shrink-0">
-                                {mode === 'count' ? (
-                                    <div className="flex items-center gap-1 text-sm font-medium tabular-nums">
-                                        <span className="text-accent">
-                                            {channel.formatted.request_success.formatted.value}
-                                            <span className="text-xs text-muted-foreground">
-                                                {channel.formatted.request_success.formatted.unit}
-                                            </span>
-                                        </span>
-                                        <span className="text-muted-foreground/40 font-light">/</span>
-                                        <span className="text-destructive">
-                                            {channel.formatted.request_failed.formatted.value}
-                                            <span className="text-xs text-muted-foreground">
-                                                {channel.formatted.request_failed.formatted.unit}
-                                            </span>
-                                        </span>
-                                    </div>
-                                ) : mode === 'tokens' ? (
-                                    <span className="font-semibold text-base">
-                                        {channel.formatted.total_token.formatted.value}
-                                        <span className="text-xs text-muted-foreground">
-                                            {channel.formatted.total_token.formatted.unit}
-                                        </span>
+                            <div className="text-right shrink-0">
+                                {rankSortMode === 'cost' && (
+                                    <span className="font-semibold text-sm">
+                                        {formatMoney(ch.total_cost).formatted.value}
+                                        <span className="text-xs text-muted-foreground ml-0.5">{formatMoney(ch.total_cost).formatted.unit}</span>
                                     </span>
-                                ) : (
-                                    <span className="font-semibold text-base">
-                                        {channel.formatted.total_cost.formatted.value}
-                                        <span className="text-xs text-muted-foreground">
-                                            {channel.formatted.total_cost.formatted.unit}
-                                        </span>
+                                )}
+                                {rankSortMode === 'count' && (
+                                    <span className="font-semibold text-sm">{ch.requests.toLocaleString()}</span>
+                                )}
+                                {rankSortMode === 'tokens' && (
+                                    <span className="font-semibold text-sm">
+                                        {formatCount(ch.total_token).formatted.value}
+                                        <span className="text-xs text-muted-foreground ml-0.5">{formatCount(ch.total_token).formatted.unit}</span>
+                                    </span>
+                                )}
+                                {rankSortMode === 'speed' && (
+                                    <span className="font-semibold text-sm tabular-nums">
+                                        {(ch.tokens_per_sec || 0).toFixed(1)}
+                                        <span className="text-xs text-muted-foreground ml-0.5">tok/s</span>
                                     </span>
                                 )}
                             </div>
@@ -120,27 +95,41 @@ export function Rank() {
         );
     };
 
+    const PERIODS: readonly { key: RankPeriod; label: string }[] = [
+        { key: 'today', label: t('periodToday') },
+        { key: '7d', label: t('period7d') },
+        { key: '30d', label: t('period30d') },
+    ];
+
     return (
         <div className="rounded-3xl bg-card text-card-foreground border-card-border border p-4">
-            <Tabs value={rankSortMode} onValueChange={(value) => setRankSortMode(value as RankSortMode)}>
-                <div className="flex items-center justify-between">
-                    <h3 className="font-semibold text-base">{t('title')}</h3>
-                    <TabsList>
-                        <TabsTrigger value="cost">{t('sortByCost')}</TabsTrigger>
-                        <TabsTrigger value="count">{t('sortByCount')}</TabsTrigger>
-                        <TabsTrigger value="tokens">{t('sortByTokens')}</TabsTrigger>
-                    </TabsList>
+            <Tabs value={rankSortMode} onValueChange={(v) => setRankSortMode(v as RankSortMode)}>
+                <div className="flex items-center justify-between gap-2 mb-2">
+                    <h3 className="font-semibold text-base shrink-0">{t('title')}</h3>
+                    <div className="flex items-center gap-2 overflow-x-auto">
+                        <select
+                            value={rankPeriod}
+                            onChange={(e) => setRankPeriod(e.target.value as RankPeriod)}
+                            className="text-xs rounded-xl border border-border bg-muted/50 px-2 py-1 text-muted-foreground focus:outline-none"
+                        >
+                            {PERIODS.map((p) => (
+                                <option key={p.key} value={p.key}>{p.label}</option>
+                            ))}
+                        </select>
+                        <TabsList>
+                            <TabsTrigger value="cost">{t('sortByCost')}</TabsTrigger>
+                            <TabsTrigger value="count">{t('sortByCount')}</TabsTrigger>
+                            <TabsTrigger value="tokens">{t('sortByTokens')}</TabsTrigger>
+                            <TabsTrigger value="speed">{t('sortBySpeed')}</TabsTrigger>
+                        </TabsList>
+                    </div>
                 </div>
                 <TabsContents>
-                    <TabsContent value="cost">
-                        {renderList(rankedByCost, 'cost')}
-                    </TabsContent>
-                    <TabsContent value="count">
-                        {renderList(rankedByCount, 'count')}
-                    </TabsContent>
-                    <TabsContent value="tokens">
-                        {renderList(rankedByTokens, 'tokens')}
-                    </TabsContent>
+                    {(['cost', 'count', 'tokens', 'speed'] as RankSortMode[]).map((mode) => (
+                        <TabsContent key={mode} value={mode}>
+                            {renderList(sorted)}
+                        </TabsContent>
+                    ))}
                 </TabsContents>
             </Tabs>
         </div>

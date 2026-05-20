@@ -30,6 +30,8 @@ jobs:
           cache-dependency-path: web/pnpm-lock.yaml
 
       - name: Build frontend
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
         run: |
           cd web
           pnpm install --frozen-lockfile

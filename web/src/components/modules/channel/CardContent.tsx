@@ -503,15 +503,7 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
                             </div>
 
                             {/* 操作按钮 */}
-                            <div className="grid gap-3 sm:grid-cols-3 pt-2">
-                                <Button
-                                    onClick={handleTest}
-                                    variant="outline"
-                                    className="w-full rounded-2xl h-12"
-                                >
-                                    <FlaskConical className="size-4" />
-                                    {t('actions.test')}
-                                </Button>
+                            <div className="grid gap-3 sm:grid-cols-2 pt-2">
                                 <Button
                                     onClick={() => (isConfirmingDelete ? setIsConfirmingDelete(false) : setIsEditing(true))}
                                     variant={isConfirmingDelete ? 'secondary' : 'default'}

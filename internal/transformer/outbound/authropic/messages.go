@@ -880,18 +880,20 @@ func convertAnthropicUsage(usage *anthropicModel.Usage) *model.Usage {
 		return nil
 	}
 
+	// Anthropic 的 input_tokens 不包含 cache_read_input_tokens 和 cache_creation_input_tokens
+	// PromptTokens 应为全部输入 token 的总和，确保缓存命中率 ≤ 100%
+	promptTokens := usage.InputTokens + usage.CacheReadInputTokens + usage.CacheCreationInputTokens
+
 	result := &model.Usage{
-		PromptTokens:             usage.InputTokens,
+		PromptTokens:             promptTokens,
 		CompletionTokens:         usage.OutputTokens,
-		TotalTokens:              usage.InputTokens + usage.OutputTokens + usage.CacheReadInputTokens + usage.CacheCreationInputTokens,
+		TotalTokens:              promptTokens + usage.OutputTokens,
 		CacheCreationInputTokens: usage.CacheCreationInputTokens,
 		AnthropicUsage:           true,
 	}
 
-	if usage.CacheReadInputTokens > 0 {
-		result.PromptTokensDetails = &model.PromptTokensDetails{
-			CachedTokens: usage.CacheReadInputTokens,
-		}
+	result.PromptTokensDetails = &model.PromptTokensDetails{
+		CachedTokens: usage.CacheReadInputTokens,
 	}
 	return result
 }

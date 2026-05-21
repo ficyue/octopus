@@ -87,8 +87,11 @@ func (m *RelayMetrics) SetInternalResponse(resp *transformerModel.InternalLLMRes
 		return
 	}
 	if usage.AnthropicUsage {
+		// Anthropic: PromptTokens 包含 CachedTokens 和 CacheCreationInputTokens
+		// 非缓存输入 = PromptTokens - CachedTokens - CacheCreationInputTokens
+		nonCachedInput := usage.PromptTokens - usage.PromptTokensDetails.CachedTokens - usage.CacheCreationInputTokens
 		m.Stats.InputCost = (float64(usage.PromptTokensDetails.CachedTokens)*modelPrice.CacheRead +
-			float64(usage.PromptTokens)*modelPrice.Input +
+			float64(nonCachedInput)*modelPrice.Input +
 			float64(usage.CacheCreationInputTokens)*modelPrice.CacheWrite) * 1e-6
 	} else {
 		m.Stats.InputCost = (float64(usage.PromptTokensDetails.CachedTokens)*modelPrice.CacheRead + float64(usage.PromptTokens-usage.PromptTokensDetails.CachedTokens)*modelPrice.Input) * 1e-6
@@ -275,18 +278,17 @@ func (m *RelayMetrics) ExtractUsageFromRawResponse(respBody []byte, isStream boo
 			// Anthropic message_start 事件：usage 在 message 字段中
 			if anthropicUsage.Type == "message_start" && anthropicUsage.Message != nil && anthropicUsage.Message.Usage != nil {
 				u := anthropicUsage.Message.Usage
-				log.Debugf("passthrough extractUsage: found anthropic message_start usage, input=%d, output=%d, cache_read=%d, cache_creation=%d", u.InputTokens, u.OutputTokens, u.CacheReadInputTokens, u.CacheCreationInputTokens)
+				promptTokens := u.InputTokens + u.CacheReadInputTokens + u.CacheCreationInputTokens
+				log.Debugf("passthrough extractUsage: found anthropic message_start usage, input=%d, output=%d, cache_read=%d, cache_creation=%d, prompt_total=%d", u.InputTokens, u.OutputTokens, u.CacheReadInputTokens, u.CacheCreationInputTokens, promptTokens)
 				usage := &transformerModel.Usage{
-					PromptTokens:             u.InputTokens,
+					PromptTokens:             promptTokens,
 					CompletionTokens:         u.OutputTokens,
-					TotalTokens:              u.InputTokens + u.OutputTokens + u.CacheReadInputTokens + u.CacheCreationInputTokens,
+					TotalTokens:              promptTokens + u.OutputTokens,
 					AnthropicUsage:           true,
 					CacheCreationInputTokens: u.CacheCreationInputTokens,
 				}
-				if u.CacheReadInputTokens > 0 {
-					usage.PromptTokensDetails = &transformerModel.PromptTokensDetails{
-						CachedTokens: u.CacheReadInputTokens,
-					}
+				usage.PromptTokensDetails = &transformerModel.PromptTokensDetails{
+					CachedTokens: u.CacheReadInputTokens,
 				}
 				m.SetInternalResponse(&transformerModel.InternalLLMResponse{Usage: usage}, m.ActualModel)
 				return
@@ -294,18 +296,17 @@ func (m *RelayMetrics) ExtractUsageFromRawResponse(respBody []byte, isStream boo
 			// Anthropic message_delta 事件 或 非流式响应：usage 在顶层
 			if anthropicUsage.Usage != nil && (anthropicUsage.Type == "message_delta" || anthropicUsage.Type == "message" || (anthropicUsage.Type == "" && (anthropicUsage.Usage.InputTokens > 0 || anthropicUsage.Usage.OutputTokens > 0 || anthropicUsage.Usage.CacheReadInputTokens > 0 || anthropicUsage.Usage.CacheCreationInputTokens > 0))) {
 				u := anthropicUsage.Usage
-				log.Debugf("passthrough extractUsage: found anthropic usage, input=%d, output=%d, cache_read=%d, cache_creation=%d", u.InputTokens, u.OutputTokens, u.CacheReadInputTokens, u.CacheCreationInputTokens)
+				promptTokens := u.InputTokens + u.CacheReadInputTokens + u.CacheCreationInputTokens
+				log.Debugf("passthrough extractUsage: found anthropic usage, input=%d, output=%d, cache_read=%d, cache_creation=%d, prompt_total=%d", u.InputTokens, u.OutputTokens, u.CacheReadInputTokens, u.CacheCreationInputTokens, promptTokens)
 				usage := &transformerModel.Usage{
-					PromptTokens:             u.InputTokens,
+					PromptTokens:             promptTokens,
 					CompletionTokens:         u.OutputTokens,
-					TotalTokens:              u.InputTokens + u.OutputTokens + u.CacheReadInputTokens + u.CacheCreationInputTokens,
+					TotalTokens:              promptTokens + u.OutputTokens,
 					AnthropicUsage:           true,
 					CacheCreationInputTokens: u.CacheCreationInputTokens,
 				}
-				if u.CacheReadInputTokens > 0 {
-					usage.PromptTokensDetails = &transformerModel.PromptTokensDetails{
-						CachedTokens: u.CacheReadInputTokens,
-					}
+				usage.PromptTokensDetails = &transformerModel.PromptTokensDetails{
+					CachedTokens: u.CacheReadInputTokens,
 				}
 				m.SetInternalResponse(&transformerModel.InternalLLMResponse{Usage: usage}, m.ActualModel)
 				return
@@ -446,18 +447,17 @@ func (m *RelayMetrics) ExtractUsageFromRawResponse(respBody []byte, isStream boo
 			if anthropicOutput != nil {
 				outputTokens = anthropicOutput.OutputTokens
 			}
-			log.Debugf("passthrough extractUsage: merged anthropic stream usage, input=%d, output=%d, cache_read=%d, cache_creation=%d", inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens)
+			promptTokens := inputTokens + cacheReadTokens + cacheCreationTokens
+			log.Debugf("passthrough extractUsage: merged anthropic stream usage, input=%d, output=%d, cache_read=%d, cache_creation=%d, prompt_total=%d", inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens, promptTokens)
 			usage := &transformerModel.Usage{
-				PromptTokens:             inputTokens,
+				PromptTokens:             promptTokens,
 				CompletionTokens:         outputTokens,
-				TotalTokens:              inputTokens + outputTokens + cacheReadTokens + cacheCreationTokens,
+				TotalTokens:              promptTokens + outputTokens,
 				AnthropicUsage:           true,
 				CacheCreationInputTokens: cacheCreationTokens,
 			}
-			if cacheReadTokens > 0 {
-				usage.PromptTokensDetails = &transformerModel.PromptTokensDetails{
-					CachedTokens: cacheReadTokens,
-				}
+			usage.PromptTokensDetails = &transformerModel.PromptTokensDetails{
+				CachedTokens: cacheReadTokens,
 			}
 			m.SetInternalResponse(&transformerModel.InternalLLMResponse{Usage: usage}, m.ActualModel)
 			return

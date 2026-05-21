@@ -204,12 +204,19 @@ func ChannelUpdate(req *model.ChannelUpdateRequest, ctx context.Context) (*model
 			updates := map[string]interface{}{}
 			if ku.Enabled != nil {
 				updates["enabled"] = *ku.Enabled
+				if *ku.Enabled {
+					updates["fail_count"] = 0
+					updates["status_code"] = 0
+				}
 			}
 			if ku.ChannelKey != nil {
 				updates["channel_key"] = *ku.ChannelKey
 			}
 			if ku.Remark != nil {
 				updates["remark"] = *ku.Remark
+			}
+			if ku.Priority != nil {
+				updates["priority"] = *ku.Priority
 			}
 			if len(updates) == 0 {
 				continue
@@ -232,6 +239,7 @@ func ChannelUpdate(req *model.ChannelUpdateRequest, ctx context.Context) (*model
 				Enabled:    ka.Enabled,
 				ChannelKey: ka.ChannelKey,
 				Remark:     ka.Remark,
+				Priority:   ka.Priority,
 			})
 		}
 		if err := tx.Create(&newKeys).Error; err != nil {

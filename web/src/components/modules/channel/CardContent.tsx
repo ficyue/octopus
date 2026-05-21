@@ -134,19 +134,20 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
 
         const keys_to_add = nextKeys
             .filter((k) => !k.id && k.channel_key.trim())
-            .map((k) => ({ enabled: k.enabled, channel_key: k.channel_key, remark: k.remark ?? '' }));
+            .map((k) => ({ enabled: k.enabled, channel_key: k.channel_key, remark: k.remark ?? '', priority: k.priority ?? 0 }));
 
         const keys_to_update = nextKeys
             .filter((k) => typeof k.id === 'number' && originalByID.has(k.id as number))
             .map((k) => {
                 const orig = originalByID.get(k.id as number)!;
-                const u: { id: number; enabled?: boolean; channel_key?: string; remark?: string } = { id: k.id as number };
+                const u: { id: number; enabled?: boolean; channel_key?: string; remark?: string; priority?: number } = { id: k.id as number };
                 if (k.enabled !== orig.enabled) u.enabled = k.enabled;
                 if (k.channel_key !== orig.channel_key) u.channel_key = k.channel_key;
                 if ((k.remark ?? '') !== orig.remark) u.remark = k.remark ?? '';
+                if ((k.priority ?? 0) !== (orig.priority ?? 0)) u.priority = k.priority ?? 0;
                 return Object.keys(u).length > 1 ? u : null;
             })
-            .filter((u) => u !== null) as Array<{ id: number; enabled?: boolean; channel_key?: string; remark?: string }>;
+            .filter((u) => u !== null) as Array<{ id: number; enabled?: boolean; channel_key?: string; remark?: string; priority?: number }>;
 
         if (keys_to_add.length > 0) req.keys_to_add = keys_to_add;
         if (keys_to_update.length > 0) req.keys_to_update = keys_to_update;
@@ -413,9 +414,12 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
                                         {t('sections.keys')}
                                     </h4>
                                     <div className="rounded-2xl border bg-card overflow-hidden">
-                                        {channel.keys?.map((key) => (
+                                        {[...(channel.keys ?? [])].sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0)).map((key) => (
                                             <div key={key.id} className="flex items-center gap-3 p-3 sm:p-4 border-b last:border-0 hover:bg-accent/5 transition-colors">
-                                                <div className={cn("size-2 shrink-0 rounded-full", key.enabled ? "bg-emerald-500" : "bg-destructive")} />
+                                                <div className={cn("size-2 shrink-0 rounded-full", key.enabled ? "bg-emerald-500" : "bg-destructive")} title={!key.enabled && key.status_code === 429 ? "429 auto-disabled" : key.enabled ? "" : "disabled"} />
+                                                {!key.enabled && key.status_code === 429 && (
+                                                    <Badge variant="secondary" className="h-5 px-1.5 text-[10px] bg-red-500/15 text-red-700 dark:text-red-400">429</Badge>
+                                                )}
 
                                                 <span className="font-mono text-sm truncate min-w-0 flex-1">
                                                     {key.channel_key.length > 10

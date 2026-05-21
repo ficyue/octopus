@@ -54,6 +54,8 @@ type ChannelKey struct {
 	LastUseTimeStamp int64   `json:"last_use_time_stamp"`
 	TotalCost        float64 `json:"total_cost"`
 	Remark           string  `json:"remark"`
+	Priority         int     `json:"priority" gorm:"default:0"`
+	FailCount        int     `json:"fail_count" gorm:"default:0"`
 }
 
 // ChannelUpdateRequest 渠道更新请求 - 仅包含变更的数据
@@ -80,12 +82,14 @@ type ChannelUpdateRequest struct {
 }
 
 type ChannelKeyAddRequest struct {
+	Priority   int    `json:"priority"`
 	Enabled    bool   `json:"enabled"`
 	ChannelKey string `json:"channel_key" binding:"required"`
 	Remark     string `json:"remark"`
 }
 
 type ChannelKeyUpdateRequest struct {
+	Priority   *int   `json:"priority,omitempty"`
 	ID         int     `json:"id" binding:"required"`
 	Enabled    *bool   `json:"enabled,omitempty"`
 	ChannelKey *string `json:"channel_key,omitempty"`
@@ -132,6 +136,7 @@ func (c *Channel) GetChannelKey() ChannelKey {
 
 	best := ChannelKey{}
 	bestCost := 0.0
+	bestPriority := 0
 	bestSet := false
 
 	for _, k := range c.Keys {
@@ -143,9 +148,10 @@ func (c *Channel) GetChannelKey() ChannelKey {
 				continue
 			}
 		}
-		if !bestSet || k.TotalCost < bestCost {
+		if !bestSet || k.Priority < bestPriority || (k.Priority == bestPriority && k.TotalCost < bestCost) {
 			best = k
 			bestCost = k.TotalCost
+			bestPriority = k.Priority
 			bestSet = true
 		}
 	}

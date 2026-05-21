@@ -13,7 +13,8 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from '@/components/common/Toast';
 import { useTranslations } from 'next-intl';
 import { useEffect, useRef, useState } from 'react';
-import { RefreshCw, X, Plus } from 'lucide-react';
+import { RefreshCw, X, Plus, GripVertical } from 'lucide-react';
+import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 
 export interface ChannelKeyFormItem {
     id?: number;
@@ -23,6 +24,7 @@ export interface ChannelKeyFormItem {
     last_use_time_stamp?: number;
     total_cost?: number;
     remark?: string;
+    priority?: number;
 }
 
 export interface ChannelFormData {
@@ -170,7 +172,7 @@ export function ChannelForm({
     const handleAddKey = () => {
         onFormDataChange({
             ...formData,
-            keys: [...formData.keys, { enabled: true, channel_key: '' }],
+            keys: [...formData.keys, { enabled: true, channel_key: '', priority: formData.keys.length }],
         });
     };
 
@@ -182,8 +184,16 @@ export function ChannelForm({
     const handleRemoveKey = (idx: number) => {
         const curr = formData.keys ?? [];
         if (curr.length <= 1) return;
-        const next = curr.filter((_, i) => i !== idx);
+        const next = curr.filter((_, i) => i !== idx).map((k, i) => ({ ...k, priority: i }));
         onFormDataChange({ ...formData, keys: next });
+    };
+
+    const handleReorderKeys = (result: any) => {
+        if (!result.destination) return;
+        const items = Array.from(formData.keys);
+        const [reordered] = items.splice(result.source.index, 1);
+        items.splice(result.destination.index, 0, reordered);
+        onFormDataChange({ ...formData, keys: items.map((k, i) => ({ ...k, priority: i })) });
     };
 
     const handleAddBaseUrl = () => {
@@ -322,42 +332,56 @@ export function ChannelForm({
                         {t('add')}
                     </Button>
                 </div>
-                <div className="space-y-2">
-                    {(formData.keys ?? []).map((k, idx) => (
-                        <div key={k.id ?? `new-${idx}`} className="flex items-center gap-2">
-                            <Input
-                                type="text"
-                                value={k.channel_key}
-                                onChange={(e) => handleUpdateKey(idx, { channel_key: e.target.value })}
-                                placeholder={t('apiKey')}
-                                required={idx === 0}
-                                className="rounded-xl flex-1"
-                            />
-                            <Input
-                                type="text"
-                                value={k.remark ?? ''}
-                                onChange={(e) => handleUpdateKey(idx, { remark: e.target.value })}
-                                placeholder={t('remark')}
-                                className="rounded-xl w-32"
-                            />
-                            <Switch
-                                checked={k.enabled}
-                                onCheckedChange={(checked) => handleUpdateKey(idx, { enabled: checked })}
-                            />
-                            <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleRemoveKey(idx)}
-                                disabled={(formData.keys ?? []).length <= 1}
-                                className="h-8 w-8 p-0 rounded-xl text-muted-foreground hover:text-destructive hover:bg-transparent disabled:opacity-40"
-                                title="Remove"
-                            >
-                                <X className="h-4 w-4" />
-                            </Button>
-                        </div>
-                    ))}
-                </div>
+                <DragDropContext onDragEnd={handleReorderKeys}>
+                    <Droppable droppableId="keys">
+                        {(provided) => (
+                            <div ref={provided.innerRef} {...provided.droppableProps} className="space-y-2">
+                                {(formData.keys ?? []).map((k, idx) => (
+                                    <Draggable key={k.id ?? `new-${idx}`} draggableId={String(k.id ?? `new-${idx}`)} index={idx}>
+                                        {(provided) => (
+                                            <div ref={provided.innerRef} {...provided.draggableProps} className="flex items-center gap-2">
+                                                <div {...provided.dragHandleProps} className="cursor-grab text-muted-foreground hover:text-foreground shrink-0">
+                                                    <GripVertical className="h-4 w-4" />
+                                                </div>
+                                                <Input
+                                                    type="text"
+                                                    value={k.channel_key}
+                                                    onChange={(e) => handleUpdateKey(idx, { channel_key: e.target.value })}
+                                                    placeholder={t('apiKey')}
+                                                    required={idx === 0}
+                                                    className="rounded-xl flex-1"
+                                                />
+                                                <Input
+                                                    type="text"
+                                                    value={k.remark ?? ''}
+                                                    onChange={(e) => handleUpdateKey(idx, { remark: e.target.value })}
+                                                    placeholder={t('remark')}
+                                                    className="rounded-xl w-32"
+                                                />
+                                                <Switch
+                                                    checked={k.enabled}
+                                                    onCheckedChange={(checked) => handleUpdateKey(idx, { enabled: checked })}
+                                                />
+                                                <Button
+                                                    type="button"
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    onClick={() => handleRemoveKey(idx)}
+                                                    disabled={(formData.keys ?? []).length <= 1}
+                                                    className="h-8 w-8 p-0 rounded-xl text-muted-foreground hover:text-destructive hover:bg-transparent disabled:opacity-40"
+                                                    title="Remove"
+                                                >
+                                                    <X className="h-4 w-4" />
+                                                </Button>
+                                            </div>
+                                        )}
+                                    </Draggable>
+                                ))}
+                                {provided.placeholder}
+                            </div>
+                        )}
+                    </Droppable>
+                </DragDropContext>
             </div>
 
             <div className="space-y-2">

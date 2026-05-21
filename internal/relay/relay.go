@@ -176,6 +176,7 @@ func (ra *relayAttempt) attempt() attemptResult {
 		// ====== 成功 ======
 		ra.collectResponse()
 		ra.usedKey.TotalCost += ra.metrics.Stats.InputCost + ra.metrics.Stats.OutputCost
+		ra.usedKey.FailCount = 0
 		op.ChannelKeyUpdate(ra.usedKey)
 
 		span.End(dbmodel.AttemptSuccess, statusCode, "")
@@ -197,6 +198,17 @@ func (ra *relayAttempt) attempt() attemptResult {
 	}
 
 	// ====== 失败 ======
+	if statusCode == 429 {
+		ra.usedKey.FailCount++
+		if ra.usedKey.FailCount >= 5 {
+			ra.usedKey.Enabled = false
+			log.Warnf("key %d auto-disabled after %d consecutive 429 failures", ra.usedKey.ID, ra.usedKey.FailCount)
+		}
+	} else if statusCode >= 500 || statusCode == 401 || statusCode == 403 {
+		ra.usedKey.FailCount++
+	} else {
+		ra.usedKey.FailCount = 0
+	}
 	op.ChannelKeyUpdate(ra.usedKey)
 	span.End(dbmodel.AttemptFailed, statusCode, fwdErr.Error())
 

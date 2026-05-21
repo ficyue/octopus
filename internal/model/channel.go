@@ -1,6 +1,7 @@
 package model
 
 import (
+	"sort"
 	"time"
 
 	"github.com/bestruirui/octopus/internal/transformer/outbound"
@@ -128,17 +129,24 @@ func (c *Channel) GetBaseUrl() string {
 }
 
 func (c *Channel) GetChannelKey() ChannelKey {
-	if c == nil || len(c.Keys) == 0 {
+	keys := c.GetAvailableKeys()
+	if len(keys) == 0 {
 		return ChannelKey{}
+	}
+	return keys[0]
+}
+
+// GetAvailableKeys returns all available keys sorted by priority (ascending),
+// then by total cost (ascending) as tiebreaker. Skips disabled, empty, and
+// recently-429 keys.
+func (c *Channel) GetAvailableKeys() []ChannelKey {
+	if c == nil || len(c.Keys) == 0 {
+		return nil
 	}
 
 	nowSec := time.Now().Unix()
 
-	best := ChannelKey{}
-	bestCost := 0.0
-	bestPriority := 0
-	bestSet := false
-
+	var available []ChannelKey
 	for _, k := range c.Keys {
 		if !k.Enabled || k.ChannelKey == "" {
 			continue
@@ -148,16 +156,15 @@ func (c *Channel) GetChannelKey() ChannelKey {
 				continue
 			}
 		}
-		if !bestSet || k.Priority < bestPriority || (k.Priority == bestPriority && k.TotalCost < bestCost) {
-			best = k
-			bestCost = k.TotalCost
-			bestPriority = k.Priority
-			bestSet = true
-		}
+		available = append(available, k)
 	}
 
-	if !bestSet {
-		return ChannelKey{}
-	}
-	return best
+	sort.Slice(available, func(i, j int) bool {
+		if available[i].Priority != available[j].Priority {
+			return available[i].Priority < available[j].Priority
+		}
+		return available[i].TotalCost < available[j].TotalCost
+	})
+
+	return available
 }

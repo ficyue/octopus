@@ -100,60 +100,78 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 			continue
 		}
 
-		usedKey := channel.GetChannelKey()
-		if usedKey.ChannelKey == "" {
+		availableKeys := channel.GetAvailableKeys()
+		if len(availableKeys) == 0 {
 			iter.Skip(channel.ID, 0, channel.Name, "no available key")
-			continue
-		}
-
-		// 熔断检查
-		if iter.SkipCircuitBreak(channel.ID, usedKey.ID, channel.Name) {
 			continue
 		}
 
 		// 出站适配器
 		outAdapter := outbound.Get(channel.Type)
 		if outAdapter == nil {
-			iter.Skip(channel.ID, usedKey.ID, channel.Name, fmt.Sprintf("unsupported channel type: %d", channel.Type))
+			iter.Skip(channel.ID, 0, channel.Name, fmt.Sprintf("unsupported channel type: %d", channel.Type))
 			continue
 		}
 
 		// 类型兼容性检查
 		if internalRequest.IsEmbeddingRequest() && !outbound.IsEmbeddingChannelType(channel.Type) {
-			iter.Skip(channel.ID, usedKey.ID, channel.Name, "channel type not compatible with embedding request")
+			iter.Skip(channel.ID, 0, channel.Name, "channel type not compatible with embedding request")
 			continue
 		}
 		if internalRequest.IsChatRequest() && !outbound.IsChatChannelType(channel.Type) {
-			iter.Skip(channel.ID, usedKey.ID, channel.Name, "channel type not compatible with chat request")
+			iter.Skip(channel.ID, 0, channel.Name, "channel type not compatible with chat request")
 			continue
 		}
 
 		// 设置实际模型
 		internalRequest.Model = item.ModelName
 
-		log.Infof("request model %s, mode: %d, forwarding to channel: %s model: %s (attempt %d/%d, sticky=%t)",
-			requestModel, group.Mode, channel.Name, item.ModelName,
-			iter.Index()+1, iter.Len(), iter.IsSticky())
+		// 遍历该渠道的所有可用密钥，尝试故障转移
+		keyAttempted := false
+		for _, usedKey := range availableKeys {
+			select {
+			case <-c.Request.Context().Done():
+				log.Infof("request context canceled, stopping key retry")
+				metrics.Save(c.Request.Context(), false, context.Canceled, iter.Attempts())
+				return
+			default:
+			}
 
-		// 构造尝试级上下文 -- 只写变化的 4 个字段
-		ra := &relayAttempt{
-			relayRequest:         req,
-			outAdapter:           outAdapter,
-			channel:              channel,
-			usedKey:              usedKey,
-			firstTokenTimeOutSec: group.FirstTokenTimeOut,
+			// 熔断检查
+			if iter.SkipCircuitBreak(channel.ID, usedKey.ID, channel.Name) {
+				continue
+			}
+
+			log.Infof("request model %s, mode: %d, forwarding to channel: %s model: %s key: %d (attempt %d/%d, sticky=%t)",
+				requestModel, group.Mode, channel.Name, item.ModelName, usedKey.ID,
+				iter.Index()+1, iter.Len(), iter.IsSticky())
+
+			// 构造尝试级上下文 -- 只写变化的 4 个字段
+			ra := &relayAttempt{
+				relayRequest:         req,
+				outAdapter:           outAdapter,
+				channel:              channel,
+				usedKey:              usedKey,
+				firstTokenTimeOutSec: group.FirstTokenTimeOut,
+			}
+
+			result := ra.attempt()
+			keyAttempted = true
+			if result.Success {
+				metrics.Save(c.Request.Context(), true, nil, iter.Attempts())
+				return
+			}
+			if result.Written {
+				metrics.Save(c.Request.Context(), false, result.Err, iter.Attempts())
+				return
+			}
+			lastErr = result.Err
 		}
 
-		result := ra.attempt()
-		if result.Success {
-			metrics.Save(c.Request.Context(), true, nil, iter.Attempts())
-			return
+		if !keyAttempted {
+			iter.Skip(channel.ID, 0, channel.Name, "all keys circuit-broken or unavailable")
+			continue
 		}
-		if result.Written {
-			metrics.Save(c.Request.Context(), false, result.Err, iter.Attempts())
-			return
-		}
-		lastErr = result.Err
 	}
 
 	// 所有通道都失败

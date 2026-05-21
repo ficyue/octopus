@@ -233,16 +233,8 @@ func (m *RelayMetrics) saveLog(ctx context.Context, err error, duration time.Dur
 		}
 	}
 
-	// 响应内容：透传模式优先使用原始响应体
-	if len(m.PassthroughResponse) > 0 {
-		// 透传模式使用原始响应体（截断过长的内容）
-		maxRespLen := 50000
-		if len(m.PassthroughResponse) > maxRespLen {
-			relayLog.ResponseContent = string(m.PassthroughResponse[:maxRespLen])
-		} else {
-			relayLog.ResponseContent = string(m.PassthroughResponse)
-		}
-	} else if m.InternalResponse != nil {
+	// 响应内容：优先使用转换后的响应（更易读），透传原始响应作为兜底
+	if m.InternalResponse != nil {
 		respForLog := m.filterResponseForLog(m.InternalResponse)
 		if respJSON, jsonErr := json.Marshal(respForLog); jsonErr == nil {
 			if m.InternalResponse.Usage != nil && m.InternalResponse.Usage.AnthropicUsage {

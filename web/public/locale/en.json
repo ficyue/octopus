@@ -517,7 +517,8 @@
         "description": "Click the button below to send a test message and verify the channel is working correctly.",
         "response": "Response"
       },
-      "passthroughEnabled": "Passthrough mode active"
+      "passthroughEnabled": "Passthrough mode active",
+      "testKey": "Test Key"
     },
     "create": {
       "dialogTitle": "Create New Channel",

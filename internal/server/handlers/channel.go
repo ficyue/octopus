@@ -27,6 +27,7 @@ var channelTestTimeout = 30 * time.Second
 type ChannelTestRequest struct {
 	ID      int    `json:"id" binding:"required"`
 	Message string `json:"message"`
+	KeyID   int    `json:"key_id"`
 }
 
 // ChannelTestResponse 渠道测试响应
@@ -217,6 +218,14 @@ func testChannel(c *gin.Context) {
 	}
 
 	usedKey := channel.GetChannelKey()
+	if req.KeyID > 0 {
+		for _, k := range channel.Keys {
+			if k.ID == req.KeyID {
+				usedKey = k
+				break
+			}
+		}
+	}
 	if usedKey.ChannelKey == "" {
 		resp.Error(c, http.StatusBadRequest, "no available API key")
 		return

@@ -370,6 +370,7 @@ export function useSyncChannel() {
 export type TestChannelRequest = {
     id: number;
     message?: string;
+    key_id?: number;
 };
 
 export type TestChannelResponse = {

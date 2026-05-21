@@ -37,6 +37,8 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
     const testChannel = useTestChannel();
     const [isTesting, setIsTesting] = useState(false);
     const [testResult, setTestResult] = useState<TestChannelResponse | null>(null);
+    const [testingKey, setTestingKey] = useState<string | null>(null);
+    const [testKeyResults, setTestKeyResults] = useState<Record<string, TestChannelResponse | null>>({});
     const [isEditing, setIsEditing] = useState(false);
     const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
     const [formData, setFormData] = useState<ChannelFormData>({
@@ -169,6 +171,23 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
                 },
                 onError: (error) => {
                     setTestResult({ success: false, model: '', content: '', latency_ms: 0, tokens_in: 0, tokens_out: 0, error: error.message });
+                },
+            }
+        );
+    };
+
+    const handleTestKey = (keyId: number, channelKey: string) => {
+        setTestingKey(channelKey);
+        testChannel.mutate(
+            { id: channel.id, key_id: keyId },
+            {
+                onSuccess: (data) => {
+                    setTestKeyResults(prev => ({ ...prev, [channelKey]: data }));
+                    setTestingKey(null);
+                },
+                onError: (error) => {
+                    setTestKeyResults(prev => ({ ...prev, [channelKey]: { success: false, model: '', content: '', latency_ms: 0, tokens_in: 0, tokens_out: 0, error: error.message } }));
+                    setTestingKey(null);
                 },
             }
         );
@@ -440,6 +459,21 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
                                                         {formatMoney(key.total_cost).formatted.value}
                                                         {formatMoney(key.total_cost).formatted.unit}
                                                     </Badge>
+
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        className="h-6 px-2 text-[10px] gap-1"
+                                                        onClick={() => handleTestKey(key.id, key.channel_key)}
+                                                        disabled={testingKey === key.channel_key}
+                                                    >
+                                                        {testingKey === key.channel_key ? (
+                                                            <Loader2 className="size-3 animate-spin" />
+                                                        ) : (
+                                                            <FlaskConical className="size-3" />
+                                                        )}
+                                                        {t('testKey')}
+                                                    </Button>
                                                 </div>
                                             </div>
                                         ))}

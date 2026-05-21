@@ -517,7 +517,8 @@
         "description": "點擊下方按鈕發送測試訊息，驗證供應源連通性。",
         "response": "模型回覆"
       },
-      "passthroughEnabled": "透傳模式已開啟"
+      "passthroughEnabled": "透傳模式已開啟",
+      "testKey": "測試密鑰"
     },
     "create": {
       "dialogTitle": "建立新供應源",

@@ -517,7 +517,8 @@
         "description": "点击下方按钮发送测试消息，验证渠道连通性。",
         "response": "模型回复"
       },
-      "passthroughEnabled": "透传模式已开启"
+      "passthroughEnabled": "透传模式已开启",
+      "testKey": "测试密钥"
     },
     "create": {
       "dialogTitle": "创建新渠道",

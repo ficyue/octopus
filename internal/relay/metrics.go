@@ -90,9 +90,31 @@ func (m *RelayMetrics) SetInternalResponse(resp *transformerModel.InternalLLMRes
 		// Anthropic: PromptTokens 包含 CachedTokens 和 CacheCreationInputTokens
 		// 非缓存输入 = PromptTokens - CachedTokens - CacheCreationInputTokens
 		nonCachedInput := usage.PromptTokens - usage.PromptTokensDetails.CachedTokens - usage.CacheCreationInputTokens
+		// 缓存写入费用：优先使用 TTL 变体定价，回退到通用 CacheWrite
+		cacheWrite5m := modelPrice.CacheWrite5Min
+		cacheWrite1h := modelPrice.CacheWrite1Hour
+		if cacheWrite5m == 0 {
+			cacheWrite5m = modelPrice.CacheWrite
+		}
+		if cacheWrite1h == 0 {
+			cacheWrite1h = modelPrice.CacheWrite
+		}
+		write5mTokens := int64(0)
+		write1hTokens := int64(0)
+		writeOtherTokens := usage.CacheCreationInputTokens
+		if usage.PromptTokensDetails != nil {
+			write5mTokens = usage.PromptTokensDetails.WriteCached5MinTokens
+			write1hTokens = usage.PromptTokensDetails.WriteCached1HourTokens
+			writeOtherTokens = usage.CacheCreationInputTokens - write5mTokens - write1hTokens
+			if writeOtherTokens < 0 {
+				writeOtherTokens = 0
+			}
+		}
 		m.Stats.InputCost = (float64(usage.PromptTokensDetails.CachedTokens)*modelPrice.CacheRead +
 			float64(nonCachedInput)*modelPrice.Input +
-			float64(usage.CacheCreationInputTokens)*modelPrice.CacheWrite) * 1e-6
+			float64(write5mTokens)*cacheWrite5m +
+			float64(write1hTokens)*cacheWrite1h +
+			float64(writeOtherTokens)*modelPrice.CacheWrite) * 1e-6
 	} else {
 		m.Stats.InputCost = (float64(usage.PromptTokensDetails.CachedTokens)*modelPrice.CacheRead + float64(usage.PromptTokens-usage.PromptTokensDetails.CachedTokens)*modelPrice.Input) * 1e-6
 	}
@@ -265,6 +287,10 @@ func (m *RelayMetrics) ExtractUsageFromRawResponse(respBody []byte, isStream boo
 					OutputTokens             int64 `json:"output_tokens"`
 					CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
 					CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
+					CacheCreation            struct {
+						Ephemeral5MinInputTokens  int64 `json:"ephemeral_5m_input_tokens"`
+						Ephemeral1HourInputTokens int64 `json:"ephemeral_1h_input_tokens"`
+					} `json:"cache_creation"`
 				} `json:"usage"`
 			} `json:"message"`
 			Usage *struct {
@@ -272,6 +298,10 @@ func (m *RelayMetrics) ExtractUsageFromRawResponse(respBody []byte, isStream boo
 				OutputTokens             int64 `json:"output_tokens"`
 				CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
 				CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
+				CacheCreation            struct {
+					Ephemeral5MinInputTokens  int64 `json:"ephemeral_5m_input_tokens"`
+					Ephemeral1HourInputTokens int64 `json:"ephemeral_1h_input_tokens"`
+				} `json:"cache_creation"`
 			} `json:"usage"`
 		}
 		if err := json.Unmarshal(data, &anthropicUsage); err == nil {
@@ -288,7 +318,10 @@ func (m *RelayMetrics) ExtractUsageFromRawResponse(respBody []byte, isStream boo
 					CacheCreationInputTokens: u.CacheCreationInputTokens,
 				}
 				usage.PromptTokensDetails = &transformerModel.PromptTokensDetails{
-					CachedTokens: u.CacheReadInputTokens,
+					CachedTokens:           u.CacheReadInputTokens,
+					WriteCachedTokens:      u.CacheCreationInputTokens,
+					WriteCached5MinTokens:  u.CacheCreation.Ephemeral5MinInputTokens,
+					WriteCached1HourTokens: u.CacheCreation.Ephemeral1HourInputTokens,
 				}
 				m.SetInternalResponse(&transformerModel.InternalLLMResponse{Usage: usage}, m.ActualModel)
 				return
@@ -306,7 +339,10 @@ func (m *RelayMetrics) ExtractUsageFromRawResponse(respBody []byte, isStream boo
 					CacheCreationInputTokens: u.CacheCreationInputTokens,
 				}
 				usage.PromptTokensDetails = &transformerModel.PromptTokensDetails{
-					CachedTokens: u.CacheReadInputTokens,
+					CachedTokens:           u.CacheReadInputTokens,
+					WriteCachedTokens:      u.CacheCreationInputTokens,
+					WriteCached5MinTokens:  u.CacheCreation.Ephemeral5MinInputTokens,
+					WriteCached1HourTokens: u.CacheCreation.Ephemeral1HourInputTokens,
 				}
 				m.SetInternalResponse(&transformerModel.InternalLLMResponse{Usage: usage}, m.ActualModel)
 				return
@@ -382,6 +418,8 @@ func (m *RelayMetrics) ExtractUsageFromRawResponse(respBody []byte, isStream boo
 			InputTokens              int64 `json:"input_tokens"`
 			CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
 			CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
+			CacheCreation5mTokens   int64 `json:"cache_creation_5m_tokens"`
+			CacheCreation1hTokens    int64 `json:"cache_creation_1h_tokens"`
 		}
 		var anthropicOutput *struct {
 			OutputTokens int64 `json:"output_tokens"`
@@ -417,10 +455,14 @@ func (m *RelayMetrics) ExtractUsageFromRawResponse(respBody []byte, isStream boo
 							InputTokens              int64 `json:"input_tokens"`
 							CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
 							CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
+							CacheCreation5mTokens   int64 `json:"cache_creation_5m_tokens"`
+							CacheCreation1hTokens    int64 `json:"cache_creation_1h_tokens"`
 						}{
 							InputTokens:              u.InputTokens,
 							CacheCreationInputTokens: u.CacheCreationInputTokens,
 							CacheReadInputTokens:     u.CacheReadInputTokens,
+							CacheCreation5mTokens:    u.CacheCreation.Ephemeral5MinInputTokens,
+							CacheCreation1hTokens:    u.CacheCreation.Ephemeral1HourInputTokens,
 						}
 					}
 					if evt.Type == "message_delta" && evt.Usage != nil {

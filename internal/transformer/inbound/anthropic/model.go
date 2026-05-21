@@ -427,6 +427,15 @@ type Usage struct {
 	// The number of input tokens read from the cache.
 	CacheReadInputTokens int64 `json:"cache_read_input_tokens,omitempty"`
 
+	// CacheCreation is the breakdown of cached tokens by TTL
+	CacheCreation CacheCreation `json:"cache_creation"`
+
 	// Available options: standard, priority, batch
 	ServiceTier string `json:"service_tier,omitempty"`
+}
+
+// CacheCreation represents the breakdown of cache creation tokens by TTL.
+type CacheCreation struct {
+	Ephemeral5MinInputTokens int64 `json:"ephemeral_5m_input_tokens,omitempty"`
+	Ephemeral1HourInputTokens int64 `json:"ephemeral_1h_input_tokens,omitempty"`
 }

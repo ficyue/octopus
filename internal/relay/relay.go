@@ -378,7 +378,7 @@ func (ra *relayAttempt) isPassthroughCompatible() bool {
 	}
 }
 
-// forwardPassthrough 透传模式：直接转发客户端原始请求和原始响应
+// forwardPassthrough 透传模式：直接转发客户端原始请求，响应同时走 transformer pipeline 提取 usage
 func (ra *relayAttempt) forwardPassthrough(ctx context.Context) (int, error) {
 	baseUrl := ra.channel.GetBaseUrl()
 	if baseUrl == "" {
@@ -413,10 +413,9 @@ func (ra *relayAttempt) forwardPassthrough(ctx context.Context) (int, error) {
 	}
 
 	// 构建出站请求：仅取客户端路径的最后一段 endpoint（去掉 API 前缀）
-	// 例如 /v1/chat/completions → /chat/completions，避免 baseUrl 已含 /v1 时重复
 	clientPath := ra.c.Request.URL.Path
 	if idx := strings.LastIndex(clientPath, "/v1/"); idx != -1 {
-		clientPath = clientPath[idx+3:] // 取 /v1/ 之后的部分 → /chat/completions
+		clientPath = clientPath[idx+3:]
 	}
 	fullURL := strings.TrimSuffix(baseUrl, "/") + clientPath
 	if ra.c.Request.URL.RawQuery != "" {
@@ -447,63 +446,166 @@ func (ra *relayAttempt) forwardPassthrough(ctx context.Context) (int, error) {
 		return 0, fmt.Errorf("upstream error: %d: %s", response.StatusCode, string(body))
 	}
 
-	// 读取完整响应体，同时解析 usage 用于统计
+	// 始终设置 ActualModel
+	ra.metrics.SetActualModel(ra.internalRequest.Model)
+
+	isStream := ra.internalRequest.Stream != nil && *ra.internalRequest.Stream
+
+	if isStream {
+		return ra.forwardPassthroughStream(ctx, response, rawBody)
+	}
+	return ra.forwardPassthroughNonStream(ctx, response, rawBody)
+}
+
+// forwardPassthroughNonStream 透传非流式：原始响应转发客户端，同时用 transformer 提取 usage
+func (ra *relayAttempt) forwardPassthroughNonStream(ctx context.Context, response *http.Response, rawBody []byte) (int, error) {
+	// 读取完整响应体
 	respBody, err := io.ReadAll(response.Body)
 	if err != nil {
 		return 0, fmt.Errorf("failed to read passthrough response: %w", err)
 	}
 
-	// 始终设置 ActualModel，确保日志中记录正确的实际模型名
-	ra.metrics.SetActualModel(ra.internalRequest.Model)
-
-	// 尝试解析响应统计信息（Usage）
-	isStream := ra.internalRequest.Stream != nil && *ra.internalRequest.Stream
-	log.Debugf("passthrough: isStream=%v, respBodyLen=%d", isStream, len(respBody))
-
-	if !isStream {
-		// 非流式：用 TransformResponse 解析完整响应
-		response.Body = io.NopCloser(bytes.NewReader(respBody))
-		if internalResp, parseErr := ra.outAdapter.TransformResponse(ctx, response); parseErr == nil && internalResp != nil {
-			if internalResp.Usage != nil {
-				log.Debugf("passthrough: TransformResponse succeeded, prompt_tokens=%d, completion_tokens=%d",
-					internalResp.Usage.PromptTokens, internalResp.Usage.CompletionTokens)
-				ra.metrics.SetInternalResponse(internalResp, ra.internalRequest.Model)
-			} else {
-				log.Debugf("passthrough: TransformResponse succeeded but usage is nil, trying raw extraction")
-				ra.metrics.ExtractUsageFromRawResponse(respBody, false)
-			}
+	// 用 transformer pipeline 提取 usage 和响应内容
+	response.Body = io.NopCloser(bytes.NewReader(respBody))
+	if internalResp, parseErr := ra.outAdapter.TransformResponse(ctx, response); parseErr == nil && internalResp != nil {
+		if internalResp.Usage != nil {
+			log.Debugf("passthrough: TransformResponse succeeded, prompt_tokens=%d, completion_tokens=%d",
+				internalResp.Usage.PromptTokens, internalResp.Usage.CompletionTokens)
+			ra.metrics.SetInternalResponse(internalResp, ra.internalRequest.Model)
 		} else {
-			log.Debugf("passthrough: TransformResponse failed (%v), trying raw extraction", parseErr)
+			log.Debugf("passthrough: TransformResponse succeeded but usage is nil, trying raw extraction")
 			ra.metrics.ExtractUsageFromRawResponse(respBody, false)
 		}
+		// 收集响应内容用于日志（非流式透传）
+		ra.collectResponsePassthrough(internalResp, respBody)
 	} else {
-		// 流式：从 SSE 事件中提取 usage
-		if len(respBody) > 200 {
-			log.Debugf("passthrough: stream respBody preview: %s", string(respBody[:200]))
-		} else {
-			log.Debugf("passthrough: stream respBody: %s", string(respBody))
-		}
-		ra.metrics.ExtractUsageFromRawResponse(respBody, true)
+		log.Debugf("passthrough: TransformResponse failed (%v), trying raw extraction", parseErr)
+		ra.metrics.ExtractUsageFromRawResponse(respBody, false)
 	}
 
 	// 保存原始请求/响应体用于日志记录
 	ra.metrics.SetPassthroughBody(rawBody, respBody)
 
-	// 透传响应到客户端：复制状态码、响应头、响应体
+	// 透传原始响应到客户端
 	for key, values := range response.Header {
 		for _, value := range values {
 			ra.c.Header(key, value)
 		}
 	}
 	ra.c.Status(response.StatusCode)
-
-	_, err = io.Copy(ra.c.Writer, bytes.NewReader(respBody))
-	if err != nil {
+	if _, err := io.Copy(ra.c.Writer, bytes.NewReader(respBody)); err != nil {
 		log.Warnf("failed to copy passthrough response body: %v", err)
 	}
 
-	// 标记已写入，禁止重试
 	return response.StatusCode, nil
+}
+
+// forwardPassthroughStream 透传流式：原始 SSE 流转发客户端，同时用 transformer 逐事件提取 usage
+func (ra *relayAttempt) forwardPassthroughStream(ctx context.Context, response *http.Response, rawBody []byte) (int, error) {
+	// 设置 SSE 响应头
+	ra.c.Header("Content-Type", "text/event-stream")
+	ra.c.Header("Cache-Control", "no-cache")
+	ra.c.Header("Connection", "keep-alive")
+	ra.c.Header("X-Accel-Buffering", "no")
+
+	firstToken := true
+	firstTokenTimeOutSec := ra.firstTokenTimeOutSec
+
+	type sseReadResult struct {
+		data string
+		err  error
+	}
+	results := make(chan sseReadResult, 64)
+
+	// 在后台 goroutine 中读取 SSE 事件
+	go func() {
+		defer close(results)
+		readCfg := &sse.ReadConfig{MaxEventSize: maxSSEEventSize}
+		for ev, err := sse.Read(response.Body, readCfg) {
+			if err != nil {
+				results <- sseReadResult{err: err}
+				return
+			}
+			results <- sseReadResult{data: ev.Data}
+		}
+	}()
+
+	var firstTokenTimer *time.Timer
+	var firstTokenC <-chan time.Time
+	if firstTokenTimeOutSec > 0 {
+		firstTokenTimer = time.NewTimer(time.Duration(firstTokenTimeOutSec) * time.Second)
+		firstTokenC = firstTokenTimer.C
+		defer func() {
+			if firstTokenTimer != nil {
+				firstTokenTimer.Stop()
+			}
+		}()
+	}
+
+	// 收集原始响应体用于日志
+	var respBodyBuf bytes.Buffer
+
+	for {
+		select {
+		case <-ctx.Done():
+			log.Infof("client disconnected, stopping passthrough stream")
+			return 0, nil
+		case <-firstTokenC:
+			log.Warnf("first token timeout (%ds) in passthrough stream", firstTokenTimeOutSec)
+			return 0, fmt.Errorf("first token timeout (%ds)", firstTokenTimeOutSec)
+		case r, ok := <-results:
+			if !ok {
+				// 流结束，提取 usage 并保存日志
+				ra.metrics.ExtractUsageFromRawResponse(respBodyBuf.Bytes(), true)
+				ra.metrics.SetPassthroughBody(rawBody, respBodyBuf.Bytes())
+				return 200, nil
+			}
+			if r.err != nil {
+				ra.metrics.ExtractUsageFromRawResponse(respBodyBuf.Bytes(), true)
+				ra.metrics.SetPassthroughBody(rawBody, respBodyBuf.Bytes())
+				return 0, fmt.Errorf("failed to read passthrough stream event: %w", r.err)
+			}
+
+			// 写入原始 SSE 事件到客户端
+			eventData := "data: " + r.data + "\n\n"
+			ra.c.Writer.Write([]byte(eventData))
+			ra.c.Writer.Flush()
+
+			// 收集原始响应体用于日志和 usage 提取
+			respBodyBuf.WriteString(r.data)
+			respBodyBuf.WriteByte('\n')
+
+			// 尝试用 transformer 解析事件以提取 usage
+			transformedStream, err := ra.outAdapter.TransformStream(ctx, []byte(r.data))
+			if err == nil && transformedStream != nil && transformedStream.Usage != nil {
+				ra.metrics.SetInternalResponse(transformedStream, ra.internalRequest.Model)
+			}
+
+			if firstToken {
+				ra.metrics.SetFirstTokenTime(time.Now())
+				firstToken = false
+				if firstTokenTimer != nil {
+					if !firstTokenTimer.Stop() {
+						select {
+						case <-firstTokenTimer.C:
+						default:
+						}
+					}
+					firstTokenTimer = nil
+					firstTokenC = nil
+				}
+			}
+		}
+	}
+}
+
+// collectResponsePassthrough 从 transformer 解析的响应中收集信息（透传模式）
+func (ra *relayAttempt) collectResponsePassthrough(internalResp *transformerModel.InternalLLMResponse, respBody []byte) {
+	// 透传模式下已经通过 SetInternalResponse 设置了 usage
+	// 这里确保响应内容也被记录到日志
+	if internalResp != nil {
+		ra.metrics.SetInternalResponse(internalResp, ra.internalRequest.Model)
+	}
 }
 
 // copyHeaders 复制请求头，过滤 hop-by-hop 头

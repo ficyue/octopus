@@ -787,8 +787,11 @@ type CompletionTokensDetails struct {
 
 // PromptTokensDetails Breakdown of tokens used in the prompt.
 type PromptTokensDetails struct {
-	AudioTokens  int64 `json:"audio_tokens"`
-	CachedTokens int64 `json:"cached_tokens"`
+	AudioTokens           int64 `json:"audio_tokens"`
+	CachedTokens          int64 `json:"cached_tokens"`
+	WriteCachedTokens     int64 `json:"write_cached_tokens,omitempty"`
+	WriteCached5MinTokens int64 `json:"write_cached_5min_tokens,omitempty"`
+	WriteCached1HourTokens int64 `json:"write_cached_1hour_tokens,omitempty"`
 }
 
 // ResponseError represents an error response.

@@ -893,7 +893,10 @@ func convertAnthropicUsage(usage *anthropicModel.Usage) *model.Usage {
 	}
 
 	result.PromptTokensDetails = &model.PromptTokensDetails{
-		CachedTokens: usage.CacheReadInputTokens,
+		CachedTokens:           usage.CacheReadInputTokens,
+		WriteCachedTokens:      usage.CacheCreationInputTokens,
+		WriteCached5MinTokens:  usage.CacheCreation.Ephemeral5MinInputTokens,
+		WriteCached1HourTokens: usage.CacheCreation.Ephemeral1HourInputTokens,
 	}
 	return result
 }

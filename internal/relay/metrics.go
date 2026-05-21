@@ -253,21 +253,86 @@ func (m *RelayMetrics) ExtractUsageFromRawResponse(respBody []byte, isStream boo
 			preview = preview[:200]
 		}
 
-		// 1. OpenAI Chat Completions 格式：顶层 usage 字段
+		// 1. Anthropic 非流式 / message_start 格式：顶层 usage 中含 input_tokens
+		var anthropicUsage struct {
+			Type    string `json:"type"`
+			Message *struct {
+				Usage *struct {
+					InputTokens              int64 `json:"input_tokens"`
+					OutputTokens             int64 `json:"output_tokens"`
+					CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
+					CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
+				} `json:"usage"`
+			} `json:"message"`
+			Usage *struct {
+				InputTokens              int64 `json:"input_tokens"`
+				OutputTokens             int64 `json:"output_tokens"`
+				CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
+				CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
+			} `json:"usage"`
+		}
+		if err := json.Unmarshal(data, &anthropicUsage); err == nil {
+			// Anthropic message_start 事件：usage 在 message 字段中
+			if anthropicUsage.Type == "message_start" && anthropicUsage.Message != nil && anthropicUsage.Message.Usage != nil {
+				u := anthropicUsage.Message.Usage
+				log.Debugf("passthrough extractUsage: found anthropic message_start usage, input=%d, output=%d, cache_read=%d, cache_creation=%d", u.InputTokens, u.OutputTokens, u.CacheReadInputTokens, u.CacheCreationInputTokens)
+				usage := &transformerModel.Usage{
+					PromptTokens:             u.InputTokens,
+					CompletionTokens:         u.OutputTokens,
+					TotalTokens:              u.InputTokens + u.OutputTokens + u.CacheReadInputTokens + u.CacheCreationInputTokens,
+					AnthropicUsage:           true,
+					CacheCreationInputTokens: u.CacheCreationInputTokens,
+				}
+				if u.CacheReadInputTokens > 0 {
+					usage.PromptTokensDetails = &transformerModel.PromptTokensDetails{
+						CachedTokens: u.CacheReadInputTokens,
+					}
+				}
+				m.SetInternalResponse(&transformerModel.InternalLLMResponse{Usage: usage}, m.ActualModel)
+				return
+			}
+			// Anthropic message_delta 事件 或 非流式响应：usage 在顶层
+			if anthropicUsage.Usage != nil && (anthropicUsage.Type == "message_delta" || anthropicUsage.Type == "message" || (anthropicUsage.Type == "" && (anthropicUsage.Usage.InputTokens > 0 || anthropicUsage.Usage.OutputTokens > 0 || anthropicUsage.Usage.CacheReadInputTokens > 0 || anthropicUsage.Usage.CacheCreationInputTokens > 0))) {
+				u := anthropicUsage.Usage
+				log.Debugf("passthrough extractUsage: found anthropic usage, input=%d, output=%d, cache_read=%d, cache_creation=%d", u.InputTokens, u.OutputTokens, u.CacheReadInputTokens, u.CacheCreationInputTokens)
+				usage := &transformerModel.Usage{
+					PromptTokens:             u.InputTokens,
+					CompletionTokens:         u.OutputTokens,
+					TotalTokens:              u.InputTokens + u.OutputTokens + u.CacheReadInputTokens + u.CacheCreationInputTokens,
+					AnthropicUsage:           true,
+					CacheCreationInputTokens: u.CacheCreationInputTokens,
+				}
+				if u.CacheReadInputTokens > 0 {
+					usage.PromptTokensDetails = &transformerModel.PromptTokensDetails{
+						CachedTokens: u.CacheReadInputTokens,
+					}
+				}
+				m.SetInternalResponse(&transformerModel.InternalLLMResponse{Usage: usage}, m.ActualModel)
+				return
+			}
+		}
+
+		// 2. OpenAI Chat Completions 格式：顶层 usage 字段
 		var chatUsage struct {
 			Usage *transformerModel.Usage `json:"usage"`
 		}
 		if err := json.Unmarshal(data, &chatUsage); err == nil && chatUsage.Usage != nil {
-			cachedTokens := int64(0)
-			if chatUsage.Usage.PromptTokensDetails != nil {
-				cachedTokens = chatUsage.Usage.PromptTokensDetails.CachedTokens
+			// 避免将 Anthropic 格式误识别为 OpenAI 格式
+			// Anthropic 的 usage 字段名称不同，解析后 PromptTokens/CompletionTokens 会是 0
+			if chatUsage.Usage.PromptTokens == 0 && chatUsage.Usage.CompletionTokens == 0 && chatUsage.Usage.TotalTokens == 0 {
+				// 跳过，可能是 Anthropic 格式（已被上面的逻辑处理）或其他未知格式
+			} else {
+				cachedTokens := int64(0)
+				if chatUsage.Usage.PromptTokensDetails != nil {
+					cachedTokens = chatUsage.Usage.PromptTokensDetails.CachedTokens
+				}
+				log.Debugf("passthrough extractUsage: found chat usage, prompt=%d, completion=%d, cached=%d", chatUsage.Usage.PromptTokens, chatUsage.Usage.CompletionTokens, cachedTokens)
+				m.SetInternalResponse(&transformerModel.InternalLLMResponse{Usage: chatUsage.Usage}, m.ActualModel)
+				return
 			}
-			log.Debugf("passthrough extractUsage: found chat usage, prompt=%d, completion=%d, cached=%d", chatUsage.Usage.PromptTokens, chatUsage.Usage.CompletionTokens, cachedTokens)
-			m.SetInternalResponse(&transformerModel.InternalLLMResponse{Usage: chatUsage.Usage}, m.ActualModel)
-			return
 		}
 
-		// 2. OpenAI Responses API 流式格式：response.completed 事件中 response.usage
+		// 3. OpenAI Responses API 流式格式：response.completed 事件中 response.usage
 		var respEvent struct {
 			Type     string `json:"type"`
 			Response struct {
@@ -310,8 +375,94 @@ func (m *RelayMetrics) ExtractUsageFromRawResponse(respBody []byte, isStream boo
 	}
 
 	if isStream {
-		// 流式响应：逐行解析 SSE 事件，提取最后一个包含 usage 的 data
+		// 流式响应：逐行解析 SSE 事件，提取 usage 信息
+		// 先尝试 Anthropic 流式合并（message_start 含 input_tokens + message_delta 含 output_tokens）
+		var anthropicInput *struct {
+			InputTokens              int64 `json:"input_tokens"`
+			CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
+			CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
+		}
+		var anthropicOutput *struct {
+			OutputTokens int64 `json:"output_tokens"`
+		}
 		lines := bytes.Split(respBody, []byte("\n"))
+		// 先扫描所有事件，收集 Anthropic 流式 usage 片段
+		for i := range lines {
+			line := bytes.TrimSpace(lines[i])
+			if bytes.HasPrefix(line, []byte("data:")) || bytes.HasPrefix(line, []byte("data: ")) {
+				payload := bytes.TrimPrefix(line, []byte("data:"))
+				payload = bytes.TrimPrefix(payload, []byte(" "))
+				if bytes.Equal(payload, []byte("[DONE]")) {
+					continue
+				}
+				var evt struct {
+					Type    string `json:"type"`
+					Message *struct {
+						Usage *struct {
+							InputTokens              int64 `json:"input_tokens"`
+							OutputTokens             int64 `json:"output_tokens"`
+							CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
+							CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
+						} `json:"usage"`
+					} `json:"message"`
+					Usage *struct {
+						OutputTokens int64 `json:"output_tokens"`
+					} `json:"usage"`
+				}
+				if json.Unmarshal(payload, &evt) == nil {
+					if evt.Type == "message_start" && evt.Message != nil && evt.Message.Usage != nil {
+						u := evt.Message.Usage
+						anthropicInput = &struct {
+							InputTokens              int64 `json:"input_tokens"`
+							CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
+							CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
+						}{
+							InputTokens:              u.InputTokens,
+							CacheCreationInputTokens: u.CacheCreationInputTokens,
+							CacheReadInputTokens:     u.CacheReadInputTokens,
+						}
+					}
+					if evt.Type == "message_delta" && evt.Usage != nil {
+						anthropicOutput = &struct {
+							OutputTokens int64 `json:"output_tokens"`
+						}{
+							OutputTokens: evt.Usage.OutputTokens,
+						}
+					}
+				}
+			}
+		}
+		// 如果同时找到 Anthropic 的 input 和 output 片段，合并为完整 usage
+		if anthropicInput != nil || anthropicOutput != nil {
+			inputTokens := int64(0)
+			outputTokens := int64(0)
+			cacheReadTokens := int64(0)
+			cacheCreationTokens := int64(0)
+			if anthropicInput != nil {
+				inputTokens = anthropicInput.InputTokens
+				cacheReadTokens = anthropicInput.CacheReadInputTokens
+				cacheCreationTokens = anthropicInput.CacheCreationInputTokens
+			}
+			if anthropicOutput != nil {
+				outputTokens = anthropicOutput.OutputTokens
+			}
+			log.Debugf("passthrough extractUsage: merged anthropic stream usage, input=%d, output=%d, cache_read=%d, cache_creation=%d", inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens)
+			usage := &transformerModel.Usage{
+				PromptTokens:             inputTokens,
+				CompletionTokens:         outputTokens,
+				TotalTokens:              inputTokens + outputTokens + cacheReadTokens + cacheCreationTokens,
+				AnthropicUsage:           true,
+				CacheCreationInputTokens: cacheCreationTokens,
+			}
+			if cacheReadTokens > 0 {
+				usage.PromptTokensDetails = &transformerModel.PromptTokensDetails{
+					CachedTokens: cacheReadTokens,
+				}
+			}
+			m.SetInternalResponse(&transformerModel.InternalLLMResponse{Usage: usage}, m.ActualModel)
+			return
+		}
+		// 非 Anthropic 流式：从后往前找第一个含 usage 的 data 行
 		for i := len(lines) - 1; i >= 0; i-- {
 			line := bytes.TrimSpace(lines[i])
 			if bytes.HasPrefix(line, []byte("data:")) || bytes.HasPrefix(line, []byte("data: ")) {
@@ -321,8 +472,6 @@ func (m *RelayMetrics) ExtractUsageFromRawResponse(respBody []byte, isStream boo
 					continue
 				}
 				extractUsage(payload)
-				// 如果已经找到 usage，SetInternalResponse 会设置 InternalResponse，
-				// 后续再次调用时 InternalResponse 不为 nil，但 Stats 已经更新过了
 				if m.InternalResponse != nil {
 					return
 				}

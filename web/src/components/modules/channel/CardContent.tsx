@@ -469,12 +469,10 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
                                                     >
                                                         {testingKey === key.channel_key ? (
                                                             <Loader2 className="size-3 animate-spin" />
-                                                        ) : testKeyResults[key.channel_key] ? (
-                                                            testKeyResults[key.channel_key].success ? (
-                                                                <CheckCircle2 className="size-3 text-green-500" />
-                                                            ) : (
-                                                                <XCircle className="size-3 text-red-500" />
-                                                            )
+                                                        ) : testKeyResults[key.channel_key]?.success ? (
+                                                            <CheckCircle2 className="size-3 text-green-500" />
+                                                        ) : testKeyResults[key.channel_key]?.success === false ? (
+                                                            <XCircle className="size-3 text-red-500" />
                                                         ) : (
                                                             <FlaskConical className="size-3" />
                                                         )}

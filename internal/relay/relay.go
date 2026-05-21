@@ -521,7 +521,7 @@ func (ra *relayAttempt) forwardPassthroughStream(ctx context.Context, response *
 	go func() {
 		defer close(results)
 		readCfg := &sse.ReadConfig{MaxEventSize: maxSSEEventSize}
-		for ev, err := sse.Read(response.Body, readCfg) {
+		for ev, err := range sse.Read(response.Body, readCfg) {
 			if err != nil {
 				results <- sseReadResult{err: err}
 				return

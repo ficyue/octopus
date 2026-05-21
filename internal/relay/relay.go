@@ -600,7 +600,7 @@ func (ra *relayAttempt) forwardPassthroughStream(ctx context.Context, response *
 }
 
 // collectResponsePassthrough 从 transformer 解析的响应中收集信息（透传模式）
-func (ra *relayAttempt) collectResponsePassthrough(internalResp *transformerModel.InternalLLMResponse, respBody []byte) {
+func (ra *relayAttempt) collectResponsePassthrough(internalResp *model.InternalLLMResponse, respBody []byte) {
 	// 透传模式下已经通过 SetInternalResponse 设置了 usage
 	// 这里确保响应内容也被记录到日志
 	if internalResp != nil {

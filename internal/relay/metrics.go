@@ -434,6 +434,10 @@ func (m *RelayMetrics) ExtractUsageFromRawResponse(respBody []byte, isStream boo
 							OutputTokens             int64 `json:"output_tokens"`
 							CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
 							CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
+							CacheCreation            struct {
+								Ephemeral5MinInputTokens  int64 `json:"ephemeral_5m_input_tokens"`
+								Ephemeral1HourInputTokens int64 `json:"ephemeral_1h_input_tokens"`
+							} `json:"cache_creation"`
 						} `json:"usage"`
 					} `json:"message"`
 					Usage *struct {

@@ -256,20 +256,20 @@ export function LogCard({ log }: { log: RelayLog }) {
                                     <Cpu className="size-3.5 shrink-0 text-blue-500" />
                                     <span>{t('totalTime')} {formatDuration(log.use_time)}</span>
                                 </div>
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-2 flex-wrap">
                                     <span className="flex items-center gap-1">
                                         <ArrowDownToLine className="size-3.5 shrink-0 text-green-500" />
-                                        <span>{log.input_tokens.toLocaleString()}</span>
+                                        <span>{t('inputTokens')} {log.input_tokens.toLocaleString()}</span>
                                     </span>
                                     <span className="text-muted-foreground/50">|</span>
                                     <span className="flex items-center gap-1">
                                         <ArrowUpFromLine className="size-3.5 shrink-0 text-purple-500" />
-                                        <span>{log.output_tokens.toLocaleString()}</span>
+                                        <span>{t('outputTokens')} {log.output_tokens.toLocaleString()}</span>
                                     </span>
                                     <span className="text-muted-foreground/50">|</span>
                                     <span className="flex items-center gap-1">
                                         <Database className="size-3.5 shrink-0 text-amber-500" />
-                                        <span>{(log.cached_tokens || 0).toLocaleString()}</span>
+                                        <span>{t('cachedTokens')} {(log.cached_tokens || 0).toLocaleString()}</span>
                                     </span>
                                     <span className="text-muted-foreground/50">|</span>
                                     <span className="flex items-center gap-1">
@@ -277,6 +277,11 @@ export function LogCard({ log }: { log: RelayLog }) {
                                         <span className="font-medium text-emerald-600 dark:text-emerald-400">
                                             {Number(log.cost).toFixed(6)}
                                         </span>
+                                    </span>
+                                    <span className="text-muted-foreground/50">|</span>
+                                    <span className="flex items-center gap-1">
+                                        <Zap className="size-3.5 shrink-0 text-orange-500" />
+                                        <span>{log.use_time > 0 ? (log.output_tokens / (log.use_time / 1000)).toFixed(1) : '0'} t/s</span>
                                     </span>
                                 </div>
                             </div>
@@ -487,12 +492,6 @@ export function LogCard({ log }: { log: RelayLog }) {
                             <div className="flex items-center gap-1.5">
                                 <Cpu className="size-3.5 text-blue-500" />
                                 <span>{t('totalTime')}: {formatDuration(log.use_time)}</span>
-                            </div>
-                            <div className="flex items-center gap-1.5">
-                                <DollarSign className="size-3.5 text-emerald-500" />
-                                <span className="font-medium text-emerald-600 dark:text-emerald-400">
-                                    {t('cost')}: {Number(log.cost).toFixed(6)}
-                                </span>
                             </div>
                         </div>
                     </MorphingDialogContent>

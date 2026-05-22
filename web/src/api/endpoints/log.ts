@@ -38,6 +38,7 @@ export interface RelayLog {
     input_tokens: number;        // 输入Token
     output_tokens: number;       // 输出Token
     cached_tokens: number;       // 缓存命中Token
+    cache_hit_rate: number;      // 缓存命中率
     ftut: number;                // 首字时间(毫秒)
     use_time: number;            // 总用时(毫秒)
     cost: number;                // 消耗费用

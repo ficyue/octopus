@@ -349,8 +349,8 @@ func parseRequest(inboundType inbound.InboundType, c *gin.Context) (*model.Inter
 func (ra *relayAttempt) forward() (int, error) {
 	ctx := ra.c.Request.Context()
 
-	// 透传模式：渠道显式设置或全局设置生效，且客户端格式与渠道格式一致时生效
-	if ra.isPassthroughEffective() && ra.isPassthroughCompatible() {
+	// 透传模式：仅在客户端格式与渠道格式一致时生效
+	if ra.channel.Passthrough && ra.isPassthroughCompatible() {
 		return ra.forwardPassthrough(ctx)
 	}
 
@@ -443,18 +443,6 @@ func (ra *relayAttempt) isPassthroughCompatible() bool {
 	default:
 		return false
 	}
-}
-
-// isPassthroughEffective 判断透传是否生效：渠道显式设置优先，否则继承全局设置
-func (ra *relayAttempt) isPassthroughEffective() bool {
-	if ra.channel.Passthrough != nil {
-		return *ra.channel.Passthrough
-	}
-	// 渠道未设置，使用全局透传设置
-	if globalPT, err := op.SettingGetBool(dbmodel.SettingKeyPassthrough); err == nil {
-		return globalPT
-	}
-	return false
 }
 
 // forwardPassthrough 透传模式：直接转发客户端原始请求，响应同时走 transformer pipeline 提取 usage

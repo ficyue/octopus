@@ -21,7 +21,6 @@ const (
 	SettingKeyCircuitBreakerMaxCooldown SettingKey = "circuit_breaker_max_cooldown" // 熔断最大冷却时间（秒），指数退避上限
 	SettingKeyHideUpstreamError        SettingKey = "hide_upstream_error"            // 隐藏上游错误信息
 	SettingKeyModelBlacklistRegex    SettingKey = "model_blacklist_regex"        // 模型黑名单正则
-	SettingKeyPassthrough           SettingKey = "passthrough"                  // 全局透传设置
 )
 
 type Setting struct {
@@ -63,11 +62,6 @@ func (s *Setting) Validate() error {
 	case SettingKeyModelBlacklistRegex:
 		if s.Value == "" {
 			return nil // 空字符串表示不设置黑名单，允许
-		}
-		return nil
-	case SettingKeyPassthrough:
-		if s.Value != "true" && s.Value != "false" {
-			return fmt.Errorf("passthrough must be true or false")
 		}
 		return nil
 	case SettingKeyProxyURL:

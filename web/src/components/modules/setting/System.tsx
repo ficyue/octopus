@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Monitor, Globe, Clock, Shield, HelpCircle, X, EyeOff, Ban, ArrowRightLeft } from 'lucide-react';
+import { Monitor, Globe, Clock, Shield, HelpCircle, X, EyeOff, Ban } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Switch } from '@/components/ui/switch';
@@ -23,8 +23,6 @@ export function SettingSystem() {
     const initialHideUpstreamError = useRef(false);
     const [modelBlacklistRegex, setModelBlacklistRegex] = useState('');
     const initialModelBlacklistRegex = useRef('');
-    const [passthrough, setPassthrough] = useState(false);
-    const initialPassthrough = useRef(false);
 
     const initialProxyUrl = useRef('');
     const initialStatsSaveInterval = useRef('');
@@ -57,11 +55,6 @@ export function SettingSystem() {
                 queueMicrotask(() => setModelBlacklistRegex(blacklistRegex.value));
                 initialModelBlacklistRegex.current = blacklistRegex.value;
             }
-            const pt = settings.find(s => s.key === SettingKey.Passthrough);
-            if (pt) {
-                queueMicrotask(() => setPassthrough(pt.value === 'true'));
-                initialPassthrough.current = pt.value === 'true';
-            }
         }
     }, [settings]);
 
@@ -81,8 +74,6 @@ export function SettingSystem() {
                     initialHideUpstreamError.current = value === 'true';
                 } else if (key === SettingKey.ModelBlacklistRegex) {
                     initialModelBlacklistRegex.current = value;
-                } else if (key === SettingKey.Passthrough) {
-                    initialPassthrough.current = value === 'true';
                 }
             }
         });

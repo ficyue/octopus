@@ -39,7 +39,7 @@ export interface ChannelFormData {
     custom_model: string;
     enabled: boolean;
     proxy: boolean;
-    passthrough: boolean | null;
+    passthrough: boolean;
     auto_sync: boolean;
     auto_group: AutoGroupType;
     match_regex: string;
@@ -628,32 +628,13 @@ export function ChannelForm({
                     </label>
                 </div>
                 <div className="mt-2">
-                    <div className="flex items-center gap-2">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                        <Switch
+                            checked={formData.passthrough}
+                            onCheckedChange={(checked) => onFormDataChange({ ...formData, passthrough: checked })}
+                        />
                         <span className="text-sm text-card-foreground">{t('passthrough')}</span>
-                        <div className="flex items-center gap-1">
-                            <button
-                                type="button"
-                                onClick={() => onFormDataChange({ ...formData, passthrough: null })}
-                                className={`px-2 py-0.5 text-xs rounded-md border ${formData.passthrough === null ? 'bg-primary text-primary-foreground border-primary' : 'border-border hover:bg-accent'}`}
-                            >
-                                {t('passthroughInherit')}
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => onFormDataChange({ ...formData, passthrough: true })}
-                                className={`px-2 py-0.5 text-xs rounded-md border ${formData.passthrough === true ? 'bg-primary text-primary-foreground border-primary' : 'border-border hover:bg-accent'}`}
-                            >
-                                {t('passthroughEnabled')}
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => onFormDataChange({ ...formData, passthrough: false })}
-                                className={`px-2 py-0.5 text-xs rounded-md border ${formData.passthrough === false ? 'bg-primary text-primary-foreground border-primary' : 'border-border hover:bg-accent'}`}
-                            >
-                                {t('passthroughDisabled')}
-                            </button>
-                        </div>
-                    </div>
+                    </label>
                 </div>
             </div>
 

@@ -82,6 +82,11 @@ func (m *RelayMetrics) SetInternalResponse(resp *transformerModel.InternalLLMRes
 	}
 	m.Stats.CachedTokens = usage.PromptTokensDetails.CachedTokens
 
+	// 计算缓存命中率 = 缓存命中Token / 输入Token
+	if usage.PromptTokens > 0 {
+		m.Stats.CacheHitRate = float64(usage.PromptTokensDetails.CachedTokens) / float64(usage.PromptTokens)
+	}
+
 	modelPrice := price.GetLLMPrice(actualModel)
 	if modelPrice == nil {
 		return
@@ -201,6 +206,7 @@ func (m *RelayMetrics) saveLog(ctx context.Context, err error, duration time.Dur
 		relayLog.InputTokens = int(m.InternalResponse.Usage.PromptTokens)
 		relayLog.OutputTokens = int(m.InternalResponse.Usage.CompletionTokens)
 		relayLog.CachedTokens = int(m.Stats.CachedTokens)
+		relayLog.CacheHitRate = m.Stats.CacheHitRate
 		relayLog.Cost = m.Stats.InputCost + m.Stats.OutputCost
 	}
 

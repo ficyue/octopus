@@ -61,7 +61,7 @@ export type Channel = {
     model: string;
     custom_model: string;
     proxy: boolean;
-    passthrough: boolean | null;
+    passthrough: boolean;
     auto_sync: boolean;
     auto_group: AutoGroupType;
     custom_header: CustomHeader[];
@@ -90,7 +90,7 @@ export type CreateChannelRequest = {
     model: string;
     custom_model?: string;
     proxy?: boolean;
-    passthrough?: boolean | null;
+    passthrough?: boolean;
     auto_sync?: boolean;
     auto_group?: AutoGroupType;
     custom_header?: CustomHeader[];
@@ -111,7 +111,7 @@ export type UpdateChannelRequest = {
     model?: string;
     custom_model?: string;
     proxy?: boolean;
-    passthrough?: boolean | null;
+    passthrough?: boolean;
     auto_sync?: boolean;
     auto_group?: AutoGroupType;
     custom_header?: CustomHeader[];

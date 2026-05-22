@@ -24,7 +24,6 @@ export const SettingKey = {
     CircuitBreakerMaxCooldown: 'circuit_breaker_max_cooldown',
     HideUpstreamError: 'hide_upstream_error',
     ModelBlacklistRegex: 'model_blacklist_regex',
-    Passthrough: 'passthrough',
 } as const;
 
 /**

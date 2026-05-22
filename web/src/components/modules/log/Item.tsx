@@ -270,6 +270,11 @@ export function LogCard({ log }: { log: RelayLog }) {
                                     <span className="flex items-center gap-1">
                                         <Database className="size-3.5 shrink-0 text-amber-500" />
                                         <span>{t('cachedTokens')} {(log.cached_tokens || 0).toLocaleString()}</span>
+                                        {(log.cache_hit_rate > 0 || (log.cached_tokens || 0) > 0) && (
+                                            <span className="text-xs text-amber-600 dark:text-amber-400">
+                                                ({(log.cache_hit_rate * 100).toFixed(1)}%)
+                                            </span>
+                                        )}
                                     </span>
                                     <span className="text-muted-foreground/50">|</span>
                                     <span className="flex items-center gap-1">
@@ -504,6 +509,11 @@ export function LogCard({ log }: { log: RelayLog }) {
                             <div className="flex items-center gap-1.5">
                                 <Database className="size-3.5 text-amber-500" />
                                 <span>{t('cachedTokens')}: {(log.cached_tokens || 0).toLocaleString()}</span>
+                                {(log.cache_hit_rate > 0 || (log.cached_tokens || 0) > 0) && (
+                                    <span className="text-xs text-amber-600 dark:text-amber-400">
+                                        ({(log.cache_hit_rate * 100).toFixed(1)}%)
+                                    </span>
+                                )}
                             </div>
                             <div className="flex items-center gap-1.5">
                                 <DollarSign className="size-3.5 text-emerald-500" />

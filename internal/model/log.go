@@ -34,6 +34,7 @@ type RelayLog struct {
 	InputTokens       int              `json:"input_tokens"`                             // 输入Token
 	OutputTokens      int              `json:"output_tokens"`                            // 输出 Token
 	CachedTokens  int              `json:"cached_tokens"`                        // 缓存命中Token
+	CacheHitRate  float64          `json:"cache_hit_rate"`                    // 缓存命中率
 	Ftut              int              `json:"ftut"`                                     // 首字时间(毫秒)
 	UseTime           int              `json:"use_time"`                                 // 总用时(毫秒)
 	Cost              float64          `json:"cost"`                                     // 消耗费用

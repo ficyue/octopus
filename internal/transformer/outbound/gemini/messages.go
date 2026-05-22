@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/bestruirui/octopus/internal/transformer/model"
+	"github.com/bestruirui/octopus/internal/utils/signature"
 	"github.com/bestruirui/octopus/internal/utils/xurl"
 	"github.com/samber/lo"
 )
@@ -226,6 +227,20 @@ func convertLLMToGeminiRequest(request *model.InternalLLMRequest) *model.GeminiG
 				Role:  "model",
 				Parts: []*model.GeminiPart{},
 			}
+			// Handle thinking/reasoning content
+			if msg.ReasoningContent != nil && *msg.ReasoningContent != "" {
+				part := &model.GeminiPart{
+					Thought: true,
+					Text:    *msg.ReasoningContent,
+				}
+				// Only set ThoughtSignature if it's from Gemini (or unknown)
+				if msg.ReasoningSignature != nil && *msg.ReasoningSignature != "" {
+					if signature.IsSafeForProvider(*msg.ReasoningSignature, signature.ProviderGemini) {
+						part.ThoughtSignature = *msg.ReasoningSignature
+					}
+				}
+				content.Parts = append(content.Parts, part)
+			}
 			// Handle text content
 			if msg.Content.Content != nil && *msg.Content.Content != "" {
 				content.Parts = append(content.Parts, &model.GeminiPart{
@@ -237,13 +252,19 @@ func convertLLMToGeminiRequest(request *model.InternalLLMRequest) *model.GeminiG
 				for _, toolCall := range msg.ToolCalls {
 					var args map[string]interface{}
 					_ = json.Unmarshal([]byte(toolCall.Function.Arguments), &args)
-					content.Parts = append(content.Parts, &model.GeminiPart{
+					part := &model.GeminiPart{
 						FunctionCall: &model.GeminiFunctionCall{
 							Name: toolCall.Function.Name,
 							Args: args,
 						},
-						ThoughtSignature: "skip_thought_signature_validator",
-					})
+					}
+					// Only set ThoughtSignature if the signature is from Gemini (or unknown)
+					if msg.ReasoningSignature != nil && *msg.ReasoningSignature != "" {
+						if signature.IsSafeForProvider(*msg.ReasoningSignature, signature.ProviderGemini) {
+							part.ThoughtSignature = *msg.ReasoningSignature
+						}
+					}
+					content.Parts = append(content.Parts, part)
 				}
 			}
 			geminiReq.Contents = append(geminiReq.Contents, content)
@@ -520,6 +541,16 @@ func convertGeminiToLLMResponse(geminiResp *model.GeminiGenerateContentResponse,
 			// Set reasoning content
 			if reasoningContent != nil {
 				msg.ReasoningContent = reasoningContent
+			}
+			// Collect thought signatures from Gemini response
+			var geminiThoughtSignature string
+			for _, part := range candidate.Content.Parts {
+				if part.Thought && part.ThoughtSignature != "" {
+					geminiThoughtSignature = part.ThoughtSignature
+				}
+			}
+			if geminiThoughtSignature != "" {
+				msg.ReasoningSignature = &geminiThoughtSignature
 			}
 
 			// Set tool calls

@@ -13,6 +13,7 @@ import (
 	"github.com/samber/lo"
 
 	"github.com/bestruirui/octopus/internal/transformer/model"
+	"github.com/bestruirui/octopus/internal/utils/signature"
 )
 
 // ResponseOutbound implements the Outbound interface for OpenAI Responses API.
@@ -318,6 +319,9 @@ type ResponsesItem struct {
 	// Function call output
 	Output *ResponsesInput `json:"output,omitempty"`
 
+	// Encrypted content for reasoning (OpenAI Responses API)
+	EncryptedContent *string `json:"encrypted_content,omitempty"`
+
 	// Image generation fields
 	Result       *string `json:"result,omitempty"`
 	Background   *string `json:"background,omitempty"`
@@ -587,6 +591,26 @@ func convertUserMessageToResponses(msg model.Message) ResponsesItem {
 
 func convertAssistantMessageToResponses(msg model.Message) []ResponsesItem {
 	var items []ResponsesItem
+
+	// Handle reasoning with encrypted_content (OpenAI-specific signature)
+	if msg.ReasoningContent != nil && *msg.ReasoningContent != "" {
+		reasoningItem := ResponsesItem{
+			Type: "reasoning",
+			Content: &ResponsesInput{Items: []ResponsesItem{
+				{
+					Type: "summary_text",
+					Text: msg.ReasoningContent,
+				},
+			}},
+		}
+		// Only include encrypted_content if it's from OpenAI (or unknown origin)
+		if msg.ReasoningSignature != nil && *msg.ReasoningSignature != "" {
+			if signature.IsSafeForProvider(*msg.ReasoningSignature, signature.ProviderOpenAI) {
+				reasoningItem.EncryptedContent = msg.ReasoningSignature
+			}
+		}
+		items = append(items, reasoningItem)
+	}
 
 	// Handle tool calls
 	for _, tc := range msg.ToolCalls {

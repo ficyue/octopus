@@ -14,6 +14,7 @@ import (
 
 	anthropicModel "github.com/bestruirui/octopus/internal/transformer/inbound/anthropic"
 	"github.com/bestruirui/octopus/internal/transformer/model"
+	"github.com/bestruirui/octopus/internal/utils/signature"
 	"github.com/bestruirui/octopus/internal/utils/xurl"
 )
 
@@ -546,7 +547,9 @@ func convertAssistantWithToolCalls(msg model.Message) []anthropicModel.MessagePa
 		blocks = append(blocks, anthropicModel.MessageContentBlock{
 			Type:      "thinking",
 			Thinking:  msg.ReasoningContent,
-			Signature: msg.ReasoningSignature,
+			// Only forward signature if it belongs to Anthropic (or is unknown origin).
+			// OpenAI encrypted_content or Gemini signatures would be invalid here.
+			Signature: signature.FilterSignatureForProvider(msg.ReasoningSignature, signature.ProviderAnthropic),
 		})
 	}
 
@@ -624,7 +627,7 @@ func buildMultipleContentWithThinking(msg model.Message) anthropicModel.MessageC
 		blocks = append(blocks, anthropicModel.MessageContentBlock{
 			Type:      "thinking",
 			Thinking:  msg.ReasoningContent,
-			Signature: msg.ReasoningSignature,
+			Signature: signature.FilterSignatureForProvider(msg.ReasoningSignature, signature.ProviderAnthropic),
 		})
 	}
 

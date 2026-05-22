@@ -514,6 +514,23 @@ func (i *MessagesInbound) TransformStream(ctx context.Context, stream *model.Int
 
 		// Handle reasoning content (thinking) delta
 		if choice.Delta != nil && choice.Delta.ReasoningContent != nil && *choice.Delta.ReasoningContent != "" {
+			// If the text content has started before the thinking content, we need to stop it
+			if i.hasTextContentStarted {
+				i.hasTextContentStarted = false
+
+				stopEvent := StreamEvent{
+					Type:  "content_block_stop",
+					Index: &i.contentIndex,
+				}
+				data, err := json.Marshal(stopEvent)
+				if err != nil {
+					return nil, fmt.Errorf("failed to marshal content_block_stop event: %w", err)
+				}
+				events = append(events, formatSSEEvent("content_block_stop", data))
+
+				i.contentIndex++
+			}
+
 			// If the tool content has started before the thinking content, we need to stop it
 			if i.hasToolContentStarted {
 				i.hasToolContentStarted = false

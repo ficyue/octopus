@@ -176,7 +176,15 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 
 	// 所有通道都失败
 	metrics.Save(c.Request.Context(), false, lastErr, iter.Attempts())
-	resp.Error(c, http.StatusBadGateway, "all channels failed")
+	if hideUpstreamError, _ := op.SettingGetBool(dbmodel.SettingKeyHideUpstreamError); hideUpstreamError {
+		resp.Error(c, http.StatusBadGateway, "all channels failed")
+	} else {
+		errMsg := "all channels failed"
+		if lastErr != nil {
+			errMsg = lastErr.Error()
+		}
+		resp.Error(c, http.StatusBadGateway, errMsg)
+	}
 }
 
 // attempt 统一管理一次通道尝试的完整生命周期
@@ -519,7 +527,12 @@ func (ra *relayAttempt) forwardPassthroughStream(ctx context.Context, response *
 
 	// 在后台 goroutine 中读取 SSE 事件
 	go func() {
-		defer close(results)
+		defer func() {
+			if r := recover(); r != nil {
+				log.Warnf("passthrough stream goroutine panicked: %v", r)
+			}
+			close(results)
+		}()
 		readCfg := &sse.ReadConfig{MaxEventSize: maxSSEEventSize}
 		for ev, err := range sse.Read(response.Body, readCfg) {
 			if err != nil {
@@ -663,7 +676,12 @@ func (ra *relayAttempt) handleStreamResponse(ctx context.Context, response *http
 	}
 	results := make(chan sseReadResult, 1)
 	go func() {
-		defer close(results)
+		defer func() {
+			if r := recover(); r != nil {
+				log.Warnf("stream reader goroutine panicked: %v", r)
+			}
+			close(results)
+		}()
 		readCfg := &sse.ReadConfig{MaxEventSize: maxSSEEventSize}
 		for ev, err := range sse.Read(response.Body, readCfg) {
 			if err != nil {

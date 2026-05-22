@@ -6,6 +6,7 @@ import (
 
 	"github.com/bestruirui/octopus/internal/model"
 	"github.com/bestruirui/octopus/internal/op"
+	"github.com/dlclark/regexp2"
 	"github.com/bestruirui/octopus/internal/price"
 	"github.com/bestruirui/octopus/internal/server/middleware"
 	"github.com/bestruirui/octopus/internal/server/resp"
@@ -60,6 +61,24 @@ func getModelList(c *gin.Context) {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
+
+	// 应用模型黑名单正则过滤
+	if blacklist, blErr := op.SettingGetString(model.SettingKeyModelBlacklistRegex); blErr == nil && blacklist != "" {
+		re, reErr := regexp2.Compile(blacklist, regexp2.ECMAScript)
+		if reErr != nil {
+			resp.Error(c, http.StatusInternalServerError, "invalid model blacklist regex: "+reErr.Error())
+			return
+		}
+		filtered := make([]string, 0, len(models))
+		for _, m := range models {
+			matched, _ := re.MatchString(m)
+			if !matched {
+				filtered = append(filtered, m)
+			}
+		}
+		models = filtered
+	}
+
 	apiKeyId := c.GetInt("api_key_id")
 	apiKey, err := op.APIKeyGet(apiKeyId, c.Request.Context())
 	if err != nil {

@@ -26,7 +26,7 @@ export function CreateDialogContent() {
         auto_group: AutoGroupType.None,
         enabled: true,
         proxy: false,
-        passthrough: false,
+        passthrough: null,
         match_regex: '',
     });
     const t = useTranslations('channel.create');
@@ -80,7 +80,7 @@ export function CreateDialogContent() {
                         auto_group: AutoGroupType.None,
                         enabled: true,
                         proxy: false,
-                        passthrough: false,
+                        passthrough: null,
                         match_regex: '',
                     });
                     setIsOpen(false);

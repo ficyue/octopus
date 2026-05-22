@@ -342,6 +342,19 @@
       },
       "clearSuccess": "Logs cleared",
       "clearFailed": "Failed to clear logs"
+    },
+    "hideUpstreamError": {
+      "label": "Hide Upstream Error",
+      "hint": "When enabled, upstream error details are hidden from clients"
+    },
+    "modelBlacklistRegex": {
+      "label": "Model Blacklist Regex",
+      "hint": "Filter models matching this regex from /v1/models output. Leave empty to disable.",
+      "placeholder": "e.g. .*-preview$|.*-deprecated.*"
+    },
+    "passthrough": {
+      "label": "Global Passthrough",
+      "hint": "When enabled, channels without explicit passthrough setting will forward raw requests and responses without protocol conversion"
     }
   },
   "group": {
@@ -570,6 +583,8 @@
       "matchRegexPlaceholder": "Optional: regex pattern to match request model names",
       "remark": "Remark",
       "passthrough": "Passthrough Mode (no protocol transform)"
-    }
+    },
+    "passthroughInherit": "Inherit",
+    "passthroughDisabled": "Disabled"
   }
 }

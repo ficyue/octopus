@@ -342,6 +342,19 @@
       },
       "clearSuccess": "日誌已清空",
       "clearFailed": "清空失敗"
+    },
+    "hideUpstreamError": {
+      "label": "隱藏上游錯誤資訊",
+      "hint": "啟用後對客戶端隱藏上游返回的原始錯誤資訊"
+    },
+    "modelBlacklistRegex": {
+      "label": "模型黑名單正則",
+      "hint": "/v1/models 返回時過濾匹配該正則的模型。留空表示不過濾。",
+      "placeholder": "例如: .*-preview$|.*-deprecated.*"
+    },
+    "passthrough": {
+      "label": "全域透傳",
+      "hint": "啟用後，未顯式設定透傳的渠道將直接透傳原始請求和回應，不經過協議轉換"
     }
   },
   "group": {
@@ -570,6 +583,8 @@
       "matchRegexPlaceholder": "可選：用於匹配請求模型名稱的正規表示式",
       "remark": "備註",
       "passthrough": "透傳模式（不做協議轉換）"
-    }
+    },
+    "passthroughInherit": "繼承全域",
+    "passthroughDisabled": "停用"
   }
 }

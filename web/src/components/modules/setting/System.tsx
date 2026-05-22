@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Monitor, Globe, Clock, Shield, HelpCircle, X } from 'lucide-react';
+import { Monitor, Globe, Clock, Shield, HelpCircle, X, EyeOff, Ban, ArrowRightLeft } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Switch } from '@/components/ui/switch';
 import { useSettingList, useSetSetting, SettingKey } from '@/api/endpoints/setting';
 import { toast } from '@/components/common/Toast';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/animate-ui/components/animate/tooltip';
@@ -18,6 +19,12 @@ export function SettingSystem() {
     const [statsSaveInterval, setStatsSaveInterval] = useState('');
     const [corsAllowOrigins, setCorsAllowOrigins] = useState('');
     const [corsInputValue, setCorsInputValue] = useState('');
+    const [hideUpstreamError, setHideUpstreamError] = useState(false);
+    const initialHideUpstreamError = useRef(false);
+    const [modelBlacklistRegex, setModelBlacklistRegex] = useState('');
+    const initialModelBlacklistRegex = useRef('');
+    const [passthrough, setPassthrough] = useState(false);
+    const initialPassthrough = useRef(false);
 
     const initialProxyUrl = useRef('');
     const initialStatsSaveInterval = useRef('');
@@ -40,6 +47,21 @@ export function SettingSystem() {
                 queueMicrotask(() => setCorsAllowOrigins(cors.value));
                 initialCorsAllowOrigins.current = cors.value;
             }
+            const hideErr = settings.find(s => s.key === SettingKey.HideUpstreamError);
+            if (hideErr) {
+                queueMicrotask(() => setHideUpstreamError(hideErr.value === 'true'));
+                initialHideUpstreamError.current = hideErr.value === 'true';
+            }
+            const blacklistRegex = settings.find(s => s.key === SettingKey.ModelBlacklistRegex);
+            if (blacklistRegex) {
+                queueMicrotask(() => setModelBlacklistRegex(blacklistRegex.value));
+                initialModelBlacklistRegex.current = blacklistRegex.value;
+            }
+            const pt = settings.find(s => s.key === SettingKey.Passthrough);
+            if (pt) {
+                queueMicrotask(() => setPassthrough(pt.value === 'true'));
+                initialPassthrough.current = pt.value === 'true';
+            }
         }
     }, [settings]);
 
@@ -55,6 +77,12 @@ export function SettingSystem() {
                     initialStatsSaveInterval.current = value;
                 } else if (key === SettingKey.CORSAllowOrigins) {
                     initialCorsAllowOrigins.current = value;
+                } else if (key === SettingKey.HideUpstreamError) {
+                    initialHideUpstreamError.current = value === 'true';
+                } else if (key === SettingKey.ModelBlacklistRegex) {
+                    initialModelBlacklistRegex.current = value;
+                } else if (key === SettingKey.Passthrough) {
+                    initialPassthrough.current = value === 'true';
                 }
             }
         });
@@ -149,6 +177,56 @@ export function SettingSystem() {
                     onBlur={() => handleSave('stats_save_interval', statsSaveInterval, initialStatsSaveInterval.current)}
                     placeholder={t('statsSaveInterval.placeholder')}
                     className="w-48 rounded-xl"
+                />
+            </div>
+
+            {/* 模型黑名单正则 */}
+            <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                    <Ban className="h-5 w-5 text-muted-foreground" />
+                    <span className="text-sm font-medium">{t('modelBlacklistRegex.label')}</span>
+                    <TooltipProvider>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <HelpCircle className="size-4 text-muted-foreground cursor-help" />
+                            </TooltipTrigger>
+                            <TooltipContent>
+                                {t('modelBlacklistRegex.hint')}
+                            </TooltipContent>
+                        </Tooltip>
+                    </TooltipProvider>
+                </div>
+                <Input
+                    value={modelBlacklistRegex}
+                    onChange={(e) => setModelBlacklistRegex(e.target.value)}
+                    onBlur={() => handleSave(SettingKey.ModelBlacklistRegex, modelBlacklistRegex, initialModelBlacklistRegex.current)}
+                    placeholder={t('modelBlacklistRegex.placeholder')}
+                    className="w-48 rounded-xl"
+                />
+            </div>
+
+            {/* 隐藏上游错误信息 */}
+            <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                    <EyeOff className="h-5 w-5 text-muted-foreground" />
+                    <span className="text-sm font-medium">{t('hideUpstreamError.label')}</span>
+                    <TooltipProvider>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <HelpCircle className="size-4 text-muted-foreground cursor-help" />
+                            </TooltipTrigger>
+                            <TooltipContent>
+                                {t('hideUpstreamError.hint')}
+                            </TooltipContent>
+                        </Tooltip>
+                    </TooltipProvider>
+                </div>
+                <Switch
+                    checked={hideUpstreamError}
+                    onCheckedChange={(checked) => {
+                        setHideUpstreamError(checked);
+                        handleSave(SettingKey.HideUpstreamError, String(checked), String(initialHideUpstreamError.current));
+                    }}
                 />
             </div>
 

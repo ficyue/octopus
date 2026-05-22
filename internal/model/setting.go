@@ -20,6 +20,8 @@ const (
 	SettingKeyCircuitBreakerCooldown    SettingKey = "circuit_breaker_cooldown"     // 熔断基础冷却时间（秒）
 	SettingKeyCircuitBreakerMaxCooldown SettingKey = "circuit_breaker_max_cooldown" // 熔断最大冷却时间（秒），指数退避上限
 	SettingKeyHideUpstreamError        SettingKey = "hide_upstream_error"            // 隐藏上游错误信息
+	SettingKeyModelBlacklistRegex    SettingKey = "model_blacklist_regex"        // 模型黑名单正则
+	SettingKeyPassthrough           SettingKey = "passthrough"                  // 全局透传设置
 )
 
 type Setting struct {
@@ -40,6 +42,7 @@ func DefaultSettings() []Setting {
 		{Key: SettingKeyCircuitBreakerCooldown, Value: "60"},     // 默认基础冷却60秒
 		{Key: SettingKeyCircuitBreakerMaxCooldown, Value: "600"}, // 默认最大冷却600秒（10分钟）
 		{Key: SettingKeyHideUpstreamError, Value: "false"},    // 默认不隐藏上游错误
+		{Key: SettingKeyModelBlacklistRegex, Value: ""},           // 默认不设置黑名单
 	}
 }
 
@@ -55,6 +58,16 @@ func (s *Setting) Validate() error {
 	case SettingKeyRelayLogKeepEnabled, SettingKeyHideUpstreamError:
 		if s.Value != "true" && s.Value != "false" {
 			return fmt.Errorf("relay log keep enabled must be true or false")
+		}
+		return nil
+	case SettingKeyModelBlacklistRegex:
+		if s.Value == "" {
+			return nil // 空字符串表示不设置黑名单，允许
+		}
+		return nil
+	case SettingKeyPassthrough:
+		if s.Value != "true" && s.Value != "false" {
+			return fmt.Errorf("passthrough must be true or false")
 		}
 		return nil
 	case SettingKeyProxyURL:

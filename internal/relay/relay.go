@@ -2,6 +2,9 @@ package relay
 
 import (
 	"bytes"
+	"compress/flate"
+	"compress/gzip"
+	"compress/zlib"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -260,12 +263,68 @@ func (ra *relayAttempt) attempt() attemptResult {
 	}
 }
 
+// decompressRequestBody 自动解压请求体，支持 gzip / deflate / x-gzip
+func decompressRequestBody(body []byte, headers http.Header) ([]byte, error) {
+	encoding := strings.ToLower(strings.TrimSpace(headers.Get("Content-Encoding")))
+	if encoding == "" || encoding == "identity" {
+		return nil, nil
+	}
+
+	var decoded []byte
+	var err error
+
+	switch encoding {
+	case "gzip", "x-gzip":
+		reader, rErr := gzip.NewReader(bytes.NewReader(body))
+		if rErr != nil {
+			return nil, fmt.Errorf("failed to create gzip reader: %w", rErr)
+		}
+		defer reader.Close()
+		decoded, err = io.ReadAll(reader)
+	case "deflate":
+		// RFC 7230 defines "deflate" as zlib, but many clients send raw DEFLATE
+		decoded, err = decompressZlibOrFlate(body)
+	default:
+		// 不支持的编码，跳过
+		return nil, nil
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to decompress %s body: %w", encoding, err)
+	}
+
+	headers.Del("Content-Encoding")
+	headers.Del("Content-Length")
+	return decoded, nil
+}
+
+// decompressZlibOrFlate 先尝试 zlib，失败则回退到 raw DEFLATE
+func decompressZlibOrFlate(body []byte) ([]byte, error) {
+	reader, err := zlib.NewReader(bytes.NewReader(body))
+	if err == nil {
+		defer reader.Close()
+		return io.ReadAll(reader)
+	}
+	flateReader := flate.NewReader(bytes.NewReader(body))
+	defer flateReader.Close()
+	return io.ReadAll(flateReader)
+}
+
 // parseRequest 解析并验证入站请求，返回原始 body 供 passthrough 使用
 func parseRequest(inboundType inbound.InboundType, c *gin.Context) (*model.InternalLLMRequest, []byte, model.Inbound, error) {
 	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return nil, nil, nil, err
+	}
+
+	// 自动解压请求体（支持 gzip / deflate / x-gzip）
+	if len(body) > 0 {
+		if decoded, decErr := decompressRequestBody(body, c.Request.Header); decErr != nil {
+			log.Warnf("failed to decompress request body: %v", decErr)
+		} else if decoded != nil {
+			body = decoded
+		}
 	}
 
 	inAdapter := inbound.Get(inboundType)
@@ -290,8 +349,8 @@ func parseRequest(inboundType inbound.InboundType, c *gin.Context) (*model.Inter
 func (ra *relayAttempt) forward() (int, error) {
 	ctx := ra.c.Request.Context()
 
-	// 透传模式：仅在客户端格式与渠道格式一致时生效
-	if ra.channel.Passthrough && ra.isPassthroughCompatible() {
+	// 透传模式：渠道显式设置或全局设置生效，且客户端格式与渠道格式一致时生效
+	if ra.isPassthroughEffective() && ra.isPassthroughCompatible() {
 		return ra.forwardPassthrough(ctx)
 	}
 
@@ -384,6 +443,18 @@ func (ra *relayAttempt) isPassthroughCompatible() bool {
 	default:
 		return false
 	}
+}
+
+// isPassthroughEffective 判断透传是否生效：渠道显式设置优先，否则继承全局设置
+func (ra *relayAttempt) isPassthroughEffective() bool {
+	if ra.channel.Passthrough != nil {
+		return *ra.channel.Passthrough
+	}
+	// 渠道未设置，使用全局透传设置
+	if globalPT, err := op.SettingGetBool(dbmodel.SettingKeyPassthrough); err == nil {
+		return globalPT
+	}
+	return false
 }
 
 // forwardPassthrough 透传模式：直接转发客户端原始请求，响应同时走 transformer pipeline 提取 usage

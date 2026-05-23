@@ -1,6 +1,8 @@
 package auth
 
 import (
+	"crypto/rand"
+	"math/big"
 	"time"
 
 	"github.com/bestruirui/octopus/internal/conf"
@@ -29,6 +31,21 @@ func GenerateJWTToken(expiresMin int) (string, string, error) {
 		return "", "", err
 	}
 	return token, claims.ExpiresAt.Format(time.RFC3339), nil
+}
+
+
+func GenerateAPIKey() string {
+	const keyChars = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	b := make([]byte, 48)
+	maxI := big.NewInt(int64(len(keyChars)))
+	for i := range b {
+		n, err := rand.Int(rand.Reader, maxI)
+		if err != nil {
+			return ""
+		}
+		b[i] = keyChars[n.Int64()]
+	}
+	return "sk-" + conf.APP_NAME + "-" + string(b)
 }
 
 func VerifyJWTToken(token string) bool {

@@ -351,7 +351,9 @@
       "label": "模型黑名单正则",
       "hint": "/v1/models 返回时过滤匹配该正则的模型。留空表示不过滤。",
       "placeholder": "例如: .*-preview$|.*-deprecated.*"
-    }
+    },
+    "apiKey.rotate": "轮换密钥",
+    "apiKey.rotateSuccess": "密钥已轮换，请复制新密钥"
   },
   "group": {
     "toast": {

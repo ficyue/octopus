@@ -6,7 +6,6 @@ import (
 
 	"github.com/bestruirui/octopus/internal/db"
 	"github.com/bestruirui/octopus/internal/model"
-	"github.com/bestruirui/octopus/internal/utils/apikey"
 	"github.com/bestruirui/octopus/internal/utils/cache"
 )
 
@@ -78,27 +77,6 @@ func APIKeyDelete(id int, ctx context.Context) error {
 	return nil
 }
 
-// APIKeyRotate rotates an API key by generating a new key value while preserving all other properties.
-func APIKeyRotate(id int, ctx context.Context) (*model.APIKey, error) {
-	existing, ok := apiKeyCache.Get(id)
-	if !ok {
-		return nil, fmt.Errorf("API key not found")
-	}
-
-	newKey := apikey.GenerateAPIKey()
-	oldKey := existing.APIKey
-
-	if err := db.GetDB().WithContext(ctx).Model(&model.APIKey{}).Where("id = ?", id).Update("api_key", newKey).Error; err != nil {
-		return nil, fmt.Errorf("failed to rotate API key: %w", err)
-	}
-
-	existing.APIKey = newKey
-	apiKeyCache.Set(id, existing)
-	apiKeyIDMap.Del(oldKey)
-	apiKeyIDMap.Set(newKey, id)
-
-	return &existing, nil
-}
 
 func apiKeyRefreshCache(ctx context.Context) error {
 	apiKeys := []model.APIKey{}

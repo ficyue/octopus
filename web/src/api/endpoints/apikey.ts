@@ -194,30 +194,6 @@ export function useDeleteAPIKey() {
     });
 }
 
-/**
- * 轮换 API Key Hook（生成新密钥，保留历史统计）
- * 
- * @example
- * const rotateAPIKey = useRotateAPIKey();
- * 
- * rotateAPIKey.mutate(1); // 轮换 ID 为 1 的 API Key
- */
-export function useRotateAPIKey() {
-    const queryClient = useQueryClient();
-
-    return useMutation({
-        mutationFn: async (id: number) => {
-            return apiClient.post<APIKey>(`/api/v1/apikey/rotate/${id}`);
-        },
-        onSuccess: (data) => {
-            logger.log('API Key 轮换成功，新密钥:', data.api_key);
-            queryClient.invalidateQueries({ queryKey: ['apikeys', 'list'] });
-        },
-        onError: (error) => {
-            logger.error('API Key 轮换失败:', error);
-        },
-    });
-}
 
 /**
  * 获取当前 API Key 的统计数据 Hook

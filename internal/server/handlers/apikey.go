@@ -32,10 +32,6 @@ func init() {
 				Handle(updateAPIKey),
 		).
 		AddRoute(
-			router.NewRoute("/rotate/:id", http.MethodPost).
-				Handle(rotateAPIKey),
-		).
-		AddRoute(
 			router.NewRoute("/delete/:id", http.MethodDelete).
 				Handle(deleteAPIKey),
 		)
@@ -133,20 +129,6 @@ func getStatsAPIKeyById(c *gin.Context) {
 	})
 }
 
-func rotateAPIKey(c *gin.Context) {
-	id := c.Param("id")
-	idNum, err := strconv.Atoi(id)
-	if err != nil {
-		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidParam)
-		return
-	}
-	key, err := op.APIKeyRotate(idNum, c.Request.Context())
-	if err != nil {
-		resp.Error(c, http.StatusInternalServerError, err.Error())
-		return
-	}
-	resp.Success(c, key)
-}
 
 func loginAPIKey(c *gin.Context) {
 	resp.Success(c, nil)

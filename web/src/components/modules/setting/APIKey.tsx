@@ -21,7 +21,6 @@ import {
     useCreateAPIKey,
     useUpdateAPIKey,
     useDeleteAPIKey,
-    useRotateAPIKey,
     type APIKey,
 } from '@/api/endpoints/apikey';
 import { useGroupList } from '@/api/endpoints/group';
@@ -469,9 +468,7 @@ function APIKeyKeyItem({
     onViewStats,
     onEdit,
     onDelete,
-    onRotate,
     isDeleting,
-    isRotating,
 }: {
     apiKey: APIKey;
     statsLayoutId: string;
@@ -480,9 +477,7 @@ function APIKeyKeyItem({
     onViewStats: () => void;
     onEdit: () => void;
     onDelete: () => void;
-    onRotate: () => void;
     isDeleting: boolean;
-    isRotating: boolean;
 }) {
     const t = useTranslations('setting');
     const [confirmDelete, setConfirmDelete] = useState(false);
@@ -523,16 +518,6 @@ function APIKeyKeyItem({
                     copyIconClassName="size-4"
                     checkIconClassName="size-4"
                 />
-                <motion.button
-                    type="button"
-                    onClick={onRotate}
-                    disabled={isRotating}
-                    className="flex size-8 items-center justify-center rounded-lg bg-muted/60 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:scale-95 disabled:opacity-50"
-                    title={t('apiKey.rotate')}
-                >
-                    {isRotating ? <Loader className="size-4 animate-spin" /> : <KeyRound className="size-4" />}
-                </motion.button>
-
                 {!confirmDelete && (
                     <motion.button
                         layoutId={deleteLayoutId}
@@ -591,7 +576,6 @@ function APIKeyPanelBase({
     const createAPIKey = useCreateAPIKey();
     const updateAPIKey = useUpdateAPIKey();
     const deleteAPIKey = useDeleteAPIKey();
-    const rotateAPIKey = useRotateAPIKey();
 
     const instanceId = useId();
     const addLayoutId = `add-btn-${idPrefix}-${instanceId}`;
@@ -603,7 +587,6 @@ function APIKeyPanelBase({
     const [viewingStats, setViewingStats] = useState<{ apiKey: APIKey; layoutId: string } | null>(null);
     const [editingKey, setEditingKey] = useState<{ apiKey: APIKey; layoutId: string } | null>(null);
     const [deletingId, setDeletingId] = useState<number | null>(null);
-    const [rotatingId, setRotatingId] = useState<number | null>(null);
 
     const sortedApiKeys = useMemo(() => {
         if (!apiKeys) return [];
@@ -624,20 +607,6 @@ function APIKeyPanelBase({
         });
     }, [deleteAPIKey, t]);
 
-    const handleRotate = useCallback((id: number) => {
-        setRotatingId(id);
-        rotateAPIKey.mutate(id, {
-            onSuccess: (data) => {
-                setRotatingId(null);
-                if (data?.api_key) {
-                    toast.success(t('apiKey.rotateSuccess'));
-                }
-            },
-            onError: () => {
-                setRotatingId(null);
-            },
-        });
-    }, [rotateAPIKey, t]);
 
     const closeAllOverlays = useCallback(() => {
         setIsAdding(false);
@@ -765,9 +734,7 @@ function APIKeyPanelBase({
                                         setEditingKey({ apiKey, layoutId: editLayoutId });
                                     }}
                                     onDelete={() => handleDelete(apiKey.id)}
-                                    onRotate={() => handleRotate(apiKey.id)}
                                     isDeleting={deleteAPIKey.isPending && deletingId === apiKey.id}
-                                    isRotating={rotateAPIKey.isPending && rotatingId === apiKey.id}
                                 />
                             );
                         })}

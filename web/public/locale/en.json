@@ -351,9 +351,7 @@
       "label": "Model Blacklist Regex",
       "hint": "Filter models matching this regex from /v1/models output. Leave empty to disable.",
       "placeholder": "e.g. .*-preview$|.*-deprecated.*"
-    },
-    "apiKey.rotate": "Rotate Key",
-    "apiKey.rotateSuccess": "Key rotated, please copy the new key"
+    }
   },
   "group": {
     "toast": {

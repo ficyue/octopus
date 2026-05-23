@@ -6,7 +6,7 @@ import (
 
 	"github.com/bestruirui/octopus/internal/db"
 	"github.com/bestruirui/octopus/internal/model"
-	"github.com/bestruirui/octopus/internal/server/auth"
+	"github.com/bestruirui/octopus/internal/utils/apikey"
 	"github.com/bestruirui/octopus/internal/utils/cache"
 )
 
@@ -85,7 +85,7 @@ func APIKeyRotate(id int, ctx context.Context) (*model.APIKey, error) {
 		return nil, fmt.Errorf("API key not found")
 	}
 
-	newKey := auth.GenerateAPIKey()
+	newKey := apikey.GenerateAPIKey()
 	oldKey := existing.APIKey
 
 	if err := db.GetDB().WithContext(ctx).Model(&model.APIKey{}).Where("id = ?", id).Update("api_key", newKey).Error; err != nil {

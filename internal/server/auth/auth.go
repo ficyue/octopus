@@ -1,8 +1,6 @@
 package auth
 
 import (
-	"crypto/rand"
-	"math/big"
 	"time"
 
 	"github.com/bestruirui/octopus/internal/conf"
@@ -45,16 +43,3 @@ func VerifyJWTToken(token string) bool {
 	return true
 }
 
-func GenerateAPIKey() string {
-	const keyChars = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-	b := make([]byte, 48)
-	maxI := big.NewInt(int64(len(keyChars)))
-	for i := range b {
-		n, err := rand.Int(rand.Reader, maxI)
-		if err != nil {
-			return ""
-		}
-		b[i] = keyChars[n.Int64()]
-	}
-	return "sk-" + conf.APP_NAME + "-" + string(b)
-}

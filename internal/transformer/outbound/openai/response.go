@@ -891,9 +891,8 @@ func openAIResponsesRequestExtensions(llmReq *model.InternalLLMRequest) *model.O
 	return llmReq.ProviderExtensions.OpenAIResponses.Request
 }
 
-// marshalRequestPayload marshals the request and merges back any raw provider fragments.
-func marshalRequestPayload(payload ResponsesRequest, llmReq *model.InternalLLMRequest) ([]byte, error) {
-	body, err := json.Marshal(payload)
+func marshalRequestPayload(payload *ResponsesRequest, llmReq *model.InternalLLMRequest) ([]byte, error) {
+	body, err := json.Marshal(*payload)
 	if err != nil {
 		return nil, err
 	}

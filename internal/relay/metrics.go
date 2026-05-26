@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"math"
+
 	"github.com/bestruirui/octopus/internal/model"
 	"github.com/bestruirui/octopus/internal/op"
 	"github.com/bestruirui/octopus/internal/price"
@@ -137,8 +139,8 @@ func (m *RelayMetrics) Save(ctx context.Context, success bool, err error, attemp
 		InputToken:   m.Stats.InputToken,
 		OutputToken:  m.Stats.OutputToken,
 		CachedTokens: m.Stats.CachedTokens,
-		InputCost:    m.Stats.InputCost,
-		OutputCost:   m.Stats.OutputCost,
+		InputCost:    math.Round(m.Stats.InputCost*100) / 100,
+		OutputCost:   math.Round(m.Stats.OutputCost*100) / 100,
 	}
 	if success {
 		globalStats.RequestSuccess = 1
@@ -210,7 +212,7 @@ func (m *RelayMetrics) saveLog(ctx context.Context, err error, duration time.Dur
 		relayLog.OutputTokens = int(m.InternalResponse.Usage.CompletionTokens)
 		relayLog.CachedTokens = int(m.Stats.CachedTokens)
 		relayLog.CacheHitRate = m.CacheHitRate
-		relayLog.Cost = m.Stats.InputCost + m.Stats.OutputCost
+		relayLog.Cost = math.Round((m.Stats.InputCost+m.Stats.OutputCost)*100) / 100
 	}
 
 	// 请求内容：透传模式优先使用原始请求体

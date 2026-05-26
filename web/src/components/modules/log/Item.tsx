@@ -280,7 +280,7 @@ export function LogCard({ log }: { log: RelayLog }) {
                                     <span className="flex items-center gap-1">
                                         <DollarSign className="size-3.5 shrink-0 text-emerald-500" />
                                         <span className="font-medium text-emerald-600 dark:text-emerald-400">
-                                            {Number(log.cost).toFixed(6)}
+                                            {Number(log.cost).toFixed(2)}
                                         </span>
                                     </span>
                                     <span className="text-muted-foreground/50">|</span>
@@ -518,7 +518,7 @@ export function LogCard({ log }: { log: RelayLog }) {
                             <div className="flex items-center gap-1.5">
                                 <DollarSign className="size-3.5 text-emerald-500" />
                                 <span className="font-medium text-emerald-600 dark:text-emerald-400">
-                                    {t('cost')}: {Number(log.cost).toFixed(6)}
+                                    {t('cost')}: {Number(log.cost).toFixed(2)}
                                 </span>
                             </div>
                             <div className="flex items-center gap-1.5">

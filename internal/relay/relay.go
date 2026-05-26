@@ -953,3 +953,4 @@ func paramOverrideValue(ptr *string) string {
 	}
 	return *ptr
 }
+				autoStreamUpgrade:    (req.internalRequest.Stream == nil || !*req.internalRequest.Stream) && outbound.IsStreamOnlyChannelType(channel.Type),

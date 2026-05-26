@@ -1078,7 +1078,11 @@ func mergeRawOnlyInputItems(inputRaw json.RawMessage, requestExt *model.OpenAIRe
 		}
 	}
 
-	return json.Marshal(merged)
+	result, err := json.Marshal(merged)
+	if err != nil {
+		return nil, false
+	}
+	return result, true
 }
 
 // cloneOutboundRawMessage safely clones a json.RawMessage.

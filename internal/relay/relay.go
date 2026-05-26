@@ -158,7 +158,7 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 				channel:              channel,
 				usedKey:              usedKey,
 				firstTokenTimeOutSec: group.FirstTokenTimeOut,
-				autoStreamUpgrade:    (req.internalRequest.Stream == nil || !*req.internalRequest.Stream) && IsStreamOnlyChannelType(channel.Type),
+				autoStreamUpgrade:    (req.internalRequest.Stream == nil || !*req.internalRequest.Stream) && outbound.IsStreamOnlyChannelType(channel.Type),
 			}
 
 			result := ra.attempt()
@@ -953,4 +953,3 @@ func paramOverrideValue(ptr *string) string {
 	}
 	return *ptr
 }
-				autoStreamUpgrade:    (req.internalRequest.Stream == nil || !*req.internalRequest.Stream) && outbound.IsStreamOnlyChannelType(channel.Type),

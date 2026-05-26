@@ -254,6 +254,10 @@ type InternalLLMRequest struct {
 	// Query stores the original query parameters from the inbound request.
 	// This is a help field and will not be sent to the llm service.
 	Query url.Values `json:"-"`
+
+	// ProviderExtensions stores provider/API-format private sidecar data.
+	// It is intentionally excluded from normal JSON output to avoid leaking raw prompts or tool outputs.
+	ProviderExtensions *ProviderExtensions `json:"-"`
 }
 
 func (r *InternalLLMRequest) Validate() error {
@@ -408,6 +412,53 @@ func (r *InternalLLMRequest) IsImageGenerationRequest() bool {
 type TransformOptions struct {
 	// ArrayInputs specifies whether the original input was an array.
 	ArrayInputs *bool `json:"-"`
+}
+
+// ProviderExtensions carries provider/API-format private data that should not
+// be serialized through the common request/response JSON model.
+// It is used to preserve raw items (tools, input, tool_choice) that cannot be
+// structurally represented in the internal model, ensuring they are passed
+// through to the upstream provider intact.
+type ProviderExtensions struct {
+	OpenAIResponses *OpenAIResponsesProviderExtensions `json:"-"`
+}
+
+// OpenAIResponsesProviderExtensions stores raw fragments for the OpenAI Responses API.
+type OpenAIResponsesProviderExtensions struct {
+	Request *OpenAIResponsesRequestExtensions `json:"-"`
+}
+
+// OpenAIResponsesRequestExtensions holds raw tools, tool_choice, and input items
+// that were not structurally represented in the internal model.
+type OpenAIResponsesRequestExtensions struct {
+	RawTools       []OpenAIResponsesRawFragment `json:"-"`
+	ToolSignatures []string                     `json:"-"`
+	RawToolChoice  json.RawMessage              `json:"-"`
+	RawInputItems  []OpenAIResponsesRawFragment `json:"-"`
+}
+
+// OpenAIResponsesRawFragment represents a raw JSON fragment for an unhandled item type.
+type OpenAIResponsesRawFragment struct {
+	Type          string          `json:"-"`
+	Name          string          `json:"-"`
+	CallID        string          `json:"-"`
+	OriginalIndex int             `json:"-"`
+	Raw           json.RawMessage `json:"-"`
+}
+
+// EnsureOpenAIResponsesProviderExtensions initializes the OpenAI Responses provider extensions
+// on the request if not already set, and returns a pointer to the extensions.
+func EnsureOpenAIResponsesProviderExtensions(req *InternalLLMRequest) *OpenAIResponsesProviderExtensions {
+	if req == nil {
+		return nil
+	}
+	if req.ProviderExtensions == nil {
+		req.ProviderExtensions = &ProviderExtensions{}
+	}
+	if req.ProviderExtensions.OpenAIResponses == nil {
+		req.ProviderExtensions.OpenAIResponses = &OpenAIResponsesProviderExtensions{}
+	}
+	return req.ProviderExtensions.OpenAIResponses
 }
 
 type StreamOptions struct {

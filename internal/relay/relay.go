@@ -25,6 +25,7 @@ import (
 	"github.com/bestruirui/octopus/internal/transformer/outbound"
 	"github.com/bestruirui/octopus/internal/utils/log"
 	"github.com/gin-gonic/gin"
+	"github.com/samber/lo"
 	"github.com/tmaxmax/go-sse"
 )
 
@@ -129,6 +130,7 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 		// 设置实际模型
 		internalRequest.Model = item.ModelName
 
+
 		// 遍历该渠道的所有可用密钥，尝试故障转移
 		keyAttempted := false
 		for _, usedKey := range availableKeys {
@@ -156,6 +158,7 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 				channel:              channel,
 				usedKey:              usedKey,
 				firstTokenTimeOutSec: group.FirstTokenTimeOut,
+				autoStreamUpgrade:    (req.internalRequest.Stream == nil || !*req.internalRequest.Stream) && IsStreamOnlyChannelType(channel.Type),
 			}
 
 			result := ra.attempt()
@@ -349,9 +352,15 @@ func parseRequest(inboundType inbound.InboundType, c *gin.Context) (*model.Inter
 func (ra *relayAttempt) forward() (int, error) {
 	ctx := ra.c.Request.Context()
 
-	// 透传模式：仅在客户端格式与渠道格式一致时生效
-	if ra.channel.Passthrough && ra.isPassthroughCompatible() {
+	// 透传模式：仅在客户端格式与渠道格式一致且非自动升级时生效
+	// 自动升级时需要走完整 transformer pipeline 来聚合流式响应
+	if ra.channel.Passthrough && ra.isPassthroughCompatible() && !ra.autoStreamUpgrade {
 		return ra.forwardPassthrough(ctx)
+	}
+
+	// 自动升级为流式：强制设置 stream=true
+	if ra.autoStreamUpgrade {
+		ra.internalRequest.Stream = lo.ToPtr(true)
 	}
 
 	// 构建出站请求
@@ -416,12 +425,22 @@ func (ra *relayAttempt) forward() (int, error) {
 	}
 
 	// 处理响应
+	// 非流式请求自动升级为流式时，聚合流式响应返回非流式结果
+	if ra.autoStreamUpgrade {
+		if err := ra.handleAutoStreamUpgrade(ctx, response); err != nil {
+			return 0, err
+		}
+		return response.StatusCode, nil
+	}
+
 	if ra.internalRequest.Stream != nil && *ra.internalRequest.Stream {
 		if err := ra.handleStreamResponse(ctx, response); err != nil {
 			return 0, err
 		}
 		return response.StatusCode, nil
 	}
+
+
 	if err := ra.handleResponse(ctx, response); err != nil {
 		return 0, err
 	}
@@ -842,6 +861,77 @@ func (ra *relayAttempt) handleResponse(ctx context.Context, response *http.Respo
 	}
 
 	ra.c.Data(http.StatusOK, "application/json", inResponse)
+	return nil
+}
+
+// handleAutoStreamUpgrade 处理非流式请求自动升级为流式
+// 当客户端发送非流式请求但渠道只支持流式响应时，自动将请求升级为流式，
+// 然后聚合所有 SSE 事件，返回一个完整的非流式响应给客户端。
+func (ra *relayAttempt) handleAutoStreamUpgrade(ctx context.Context, response *http.Response) error {
+	log.Infof("auto stream upgrade: upgrading non-stream request to stream for channel %s", ra.channel.Name)
+
+	if ct := response.Header.Get("Content-Type"); ct != "" && !strings.Contains(strings.ToLower(ct), "text/event-stream") {
+		body, _ := io.ReadAll(io.LimitReader(response.Body, 16*1024))
+		return fmt.Errorf("auto stream upgrade: upstream returned non-SSE content-type %q: %s", ct, string(body))
+	}
+
+	var firstTokenTime time.Time
+	firstToken := true
+
+	readCfg := &sse.ReadConfig{MaxEventSize: maxSSEEventSize}
+	for ev, err := range sse.Read(response.Body, readCfg) {
+		if err != nil {
+			log.Warnf("auto stream upgrade: error reading SSE event: %v", err)
+			break
+		}
+		if ev.Data == "" || ev.Data == "[DONE]" {
+			continue
+		}
+
+		// 通过出站 transformer 将 SSE 事件转为内部格式
+		internalStream, err := ra.outAdapter.TransformStream(ctx, []byte(ev.Data))
+		if err != nil {
+			log.Warnf("auto stream upgrade: failed to transform stream event: %v", err)
+			continue
+		}
+		if internalStream == nil {
+			continue
+		}
+
+		// 通过入站 transformer 累积流式块（TransformStream 会将块存储到 inAdapter 内部）
+		if _, err := ra.inAdapter.TransformStream(ctx, internalStream); err != nil {
+			log.Warnf("auto stream upgrade: failed to transform inbound stream: %v", err)
+			continue
+		}
+
+		if firstToken {
+			firstTokenTime = time.Now()
+			firstToken = false
+		}
+	}
+
+	// 从入站适配器获取聚合后的完整响应
+	aggregatedResponse, err := ra.inAdapter.GetInternalResponse(ctx)
+	if err != nil {
+		return fmt.Errorf("auto stream upgrade: failed to aggregate stream response: %w", err)
+	}
+	if aggregatedResponse == nil {
+		return fmt.Errorf("auto stream upgrade: aggregated response is nil")
+	}
+
+	// 将聚合后的内部响应转换为入站格式的非流式响应
+	inResponse, err := ra.inAdapter.TransformResponse(ctx, aggregatedResponse)
+	if err != nil {
+		return fmt.Errorf("auto stream upgrade: failed to transform aggregated response: %w", err)
+	}
+
+	ra.c.Data(http.StatusOK, "application/json", inResponse)
+
+	// 更新指标
+	if !firstToken {
+		ra.metrics.SetFirstTokenTime(firstTokenTime)
+	}
+
 	return nil
 }
 

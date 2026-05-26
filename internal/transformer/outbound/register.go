@@ -43,6 +43,17 @@ func IsChatChannelType(channelType OutboundType) bool {
 	return ChatChannelTypes[channelType]
 }
 
+// StreamOnlyChannelTypes 定义只支持流式响应的渠道类型
+// Anthropic Messages API 必须使用流式才能获取完整 thinking/reasoning 信息
+var StreamOnlyChannelTypes = map[OutboundType]bool{
+	OutboundTypeAnthropic: true,
+}
+
+// IsStreamOnlyChannelType 判断渠道是否只支持流式响应
+func IsStreamOnlyChannelType(channelType OutboundType) bool {
+	return StreamOnlyChannelTypes[channelType]
+}
+
 var outboundFactories = map[OutboundType]func() model.Outbound{
 	OutboundTypeOpenAIChat:      func() model.Outbound { return &openai.ChatOutbound{} },
 	OutboundTypeOpenAIResponse:  func() model.Outbound { return &openai.ResponseOutbound{} },

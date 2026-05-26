@@ -61,7 +61,7 @@ func (i *ResponseInbound) TransformRequest(ctx context.Context, body []byte) (*m
 		return nil, fmt.Errorf("model is required")
 	}
 
-	return convertToInternalRequest(&req)
+	return convertToInternalRequest(&req, body)
 }
 
 func (i *ResponseInbound) TransformResponse(ctx context.Context, response *model.InternalLLMResponse) ([]byte, error) {
@@ -847,6 +847,13 @@ type ResponsesToolChoice struct {
 	Mode *string `json:"mode,omitempty"`
 	Type *string `json:"type,omitempty"`
 	Name *string `json:"name,omitempty"`
+	Tools []ResponsesToolOption `json:"tools,omitempty"`
+}
+
+// ResponsesToolOption represents a tool reference in tool_choice.
+type ResponsesToolOption struct {
+	Type string `json:"type"`
+	Name string `json:"name,omitempty"`
 }
 
 func (t *ResponsesToolChoice) UnmarshalJSON(data []byte) error {
@@ -937,7 +944,7 @@ type ResponsesContentPart struct {
 
 // Conversion functions
 
-func convertToInternalRequest(req *ResponsesRequest) (*model.InternalLLMRequest, error) {
+func convertToInternalRequest(req *ResponsesRequest, rawBody ...[]byte) (*model.InternalLLMRequest, error) {
 	chatReq := &model.InternalLLMRequest{
 		Model:               req.Model,
 		Temperature:         req.Temperature,
@@ -1007,6 +1014,13 @@ func convertToInternalRequest(req *ResponsesRequest) (*model.InternalLLMRequest,
 		chatReq.ResponseFormat = &model.ResponseFormat{
 			Type: req.Text.Format.Type,
 		}
+	}
+
+	// Attach provider extensions for raw tools/input items/tool_choice that can't be
+	// structurally represented in the internal model. These are replayed back when
+	// building the outbound request for the same API format.
+	if len(rawBody) > 0 {
+		attachOpenAIResponsesRequestExtensions(chatReq, req, rawBody[0])
 	}
 
 	return chatReq, nil
@@ -1416,4 +1430,188 @@ func convertUsageToResponses(usage *model.Usage) *ResponsesUsage {
 
 func generateItemID() string {
 	return fmt.Sprintf("item_%s", lo.RandomString(16, lo.AlphanumericCharset))
+}
+
+// --- Provider Extensions: raw items pass-through for Responses API ---
+
+// isStructurallyRepresentedToolType returns true for tool types that are
+// fully represented in the internal model and don't need raw pass-through.
+func isStructurallyRepresentedToolType(toolType string) bool {
+	switch toolType {
+	case "function", "image_generation":
+		return true
+	default:
+		return false
+	}
+}
+
+// responseToolSignature returns a stable signature for a Responses API tool.
+func responseToolSignature(tool ResponsesTool) string {
+	switch tool.Type {
+	case "function":
+		return "function:" + tool.Name
+	default:
+		return tool.Type
+	}
+}
+
+// isStructurallyRepresentedInputItemType returns true for input item types
+// that are fully represented in the internal model.
+func isStructurallyRepresentedInputItemType(itemType string) bool {
+	switch itemType {
+	case "", "message", "input_text", "input_image", "function_call",
+		"function_call_output", "reasoning", "compaction", "compaction_summary":
+		return true
+	default:
+		return false
+	}
+}
+
+// rawRequestFragments holds the raw JSON fragments parsed from the request body.
+type rawRequestFragments struct {
+	Tools      []json.RawMessage
+	ToolChoice json.RawMessage
+	InputItems []json.RawMessage
+}
+
+// parseRawRequestFragments extracts raw JSON fragments from the original request body.
+func parseRawRequestFragments(rawBody []byte) rawRequestFragments {
+	if len(rawBody) == 0 {
+		return rawRequestFragments{}
+	}
+
+	var raw struct {
+		Tools      []json.RawMessage `json:"tools"`
+		ToolChoice json.RawMessage   `json:"tool_choice"`
+		Input      json.RawMessage   `json:"input"`
+	}
+	if err := json.Unmarshal(rawBody, &raw); err != nil {
+		return rawRequestFragments{}
+	}
+
+	var inputItems []json.RawMessage
+	if len(raw.Input) > 0 {
+		_ = json.Unmarshal(raw.Input, &inputItems)
+	}
+
+	return rawRequestFragments{
+		Tools:      raw.Tools,
+		ToolChoice: raw.ToolChoice,
+		InputItems: inputItems,
+	}
+}
+
+// buildRawOnlyToolFragments creates raw fragments for tools that are NOT
+// structurally represented in the internal model.
+func buildRawOnlyToolFragments(tools []ResponsesTool, rawTools []json.RawMessage) []model.OpenAIResponsesRawFragment {
+	if len(tools) == 0 {
+		return nil
+	}
+
+	fragments := make([]model.OpenAIResponsesRawFragment, 0)
+	for i := range tools {
+		if i >= len(rawTools) || len(rawTools[i]) == 0 || isStructurallyRepresentedToolType(tools[i].Type) {
+			continue
+		}
+
+		fragments = append(fragments, model.OpenAIResponsesRawFragment{
+			Type:          tools[i].Type,
+			Name:          tools[i].Name,
+			OriginalIndex: i,
+			Raw:           cloneRawMessage(rawTools[i]),
+		})
+	}
+
+	return fragments
+}
+
+// buildRepresentedToolSignatures returns signatures for structurally represented tools,
+// used to verify that the tool list hasn't been modified before replaying raw fragments.
+func buildRepresentedToolSignatures(tools []ResponsesTool) []string {
+	if len(tools) == 0 {
+		return nil
+	}
+
+	signatures := make([]string, 0, len(tools))
+	for _, tool := range tools {
+		if !isStructurallyRepresentedToolType(tool.Type) {
+			continue
+		}
+		signatures = append(signatures, responseToolSignature(tool))
+	}
+
+	return signatures
+}
+
+// rawUnsupportedToolChoice returns the raw tool choice JSON if it references
+// tools that are not structurally represented (i.e., tool lists).
+func rawUnsupportedToolChoice(choice *ResponsesToolChoice, rawChoice json.RawMessage) json.RawMessage {
+	if choice == nil || len(rawChoice) == 0 {
+		return nil
+	}
+	// Only pass through tool_choice if it contains a "tools" array (complex selection)
+	if len(choice.Tools) > 0 {
+		return cloneRawMessage(rawChoice)
+	}
+	return nil
+}
+
+// buildRawOnlyInputFragments creates raw fragments for input items that are NOT
+// structurally represented in the internal model.
+func buildRawOnlyInputFragments(input ResponsesInput, rawItems []json.RawMessage) []model.OpenAIResponsesRawFragment {
+	if len(input.Items) == 0 {
+		return nil
+	}
+
+	fragments := make([]model.OpenAIResponsesRawFragment, 0)
+	for i := range input.Items {
+		item := input.Items[i]
+		if i >= len(rawItems) || len(rawItems[i]) == 0 || isStructurallyRepresentedInputItemType(item.Type) {
+			continue
+		}
+
+		fragments = append(fragments, model.OpenAIResponsesRawFragment{
+			Type:          item.Type,
+			Name:          item.Name,
+			CallID:        item.CallID,
+			OriginalIndex: i,
+			Raw:           cloneRawMessage(rawItems[i]),
+		})
+	}
+
+	return fragments
+}
+
+// attachOpenAIResponsesRequestExtensions parses the raw request body and stores
+// unhandled tools/input items/tool_choice as raw JSON fragments in ProviderExtensions.
+func attachOpenAIResponsesRequestExtensions(chatReq *model.InternalLLMRequest, req *ResponsesRequest, rawBody []byte) {
+	if chatReq == nil || req == nil {
+		return
+	}
+
+	raw := parseRawRequestFragments(rawBody)
+	requestExt := &model.OpenAIResponsesRequestExtensions{
+		RawTools:       buildRawOnlyToolFragments(req.Tools, raw.Tools),
+		ToolSignatures: buildRepresentedToolSignatures(req.Tools),
+		RawToolChoice:  rawUnsupportedToolChoice(req.ToolChoice, raw.ToolChoice),
+		RawInputItems:  buildRawOnlyInputFragments(req.Input, raw.InputItems),
+	}
+
+	if len(requestExt.RawTools) == 0 && len(requestExt.RawToolChoice) == 0 && len(requestExt.RawInputItems) == 0 {
+		return
+	}
+
+	ext := model.EnsureOpenAIResponsesProviderExtensions(chatReq)
+	if ext == nil {
+		return
+	}
+	ext.Request = requestExt
+}
+
+// cloneRawMessage safely clones a json.RawMessage.
+func cloneRawMessage(src json.RawMessage) json.RawMessage {
+	if len(src) == 0 {
+		return nil
+	}
+	return append(json.RawMessage(nil), src...)
 }

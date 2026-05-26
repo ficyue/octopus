@@ -32,7 +32,7 @@ func (o *ResponseOutbound) TransformRequest(ctx context.Context, request *model.
 	// Convert to Responses API request format
 	responsesReq := ConvertToResponsesRequest(request)
 
-	body, err := json.Marshal(responsesReq)
+	body, err := marshalRequestPayload(responsesReq, request)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal responses api request: %w", err)
 	}
@@ -365,11 +365,18 @@ type ResponsesToolChoice struct {
 	Mode *string `json:"mode,omitempty"`
 	Type *string `json:"type,omitempty"`
 	Name *string `json:"name,omitempty"`
+	Tools []ResponsesToolOption `json:"tools,omitempty"`
+}
+
+// ResponsesToolOption represents a tool reference in tool_choice.
+type ResponsesToolOption struct {
+	Type string `json:"type"`
+	Name string `json:"name,omitempty"`
 }
 
 func (t ResponsesToolChoice) MarshalJSON() ([]byte, error) {
 	// If only Mode is set and it's a simple mode like "auto", "none", "required"
-	if t.Mode != nil && t.Type == nil && t.Name == nil {
+	if t.Mode != nil && t.Type == nil && t.Name == nil && len(t.Tools) == 0 {
 		return json.Marshal(*t.Mode)
 	}
 	// Otherwise, serialize as an object
@@ -872,4 +879,213 @@ func convertResponsesUsage(usage *ResponsesUsage) *model.Usage {
 	}
 
 	return result
+}
+
+// --- Provider Extensions: raw items pass-through for Responses API ---
+
+// openAIResponsesRequestExtensions retrieves the provider extensions for OpenAI Responses API.
+func openAIResponsesRequestExtensions(llmReq *model.InternalLLMRequest) *model.OpenAIResponsesRequestExtensions {
+	if llmReq == nil || llmReq.ProviderExtensions == nil || llmReq.ProviderExtensions.OpenAIResponses == nil {
+		return nil
+	}
+	return llmReq.ProviderExtensions.OpenAIResponses.Request
+}
+
+// marshalRequestPayload marshals the request and merges back any raw provider fragments.
+func marshalRequestPayload(payload ResponsesRequest, llmReq *model.InternalLLMRequest) ([]byte, error) {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+
+	requestExt := openAIResponsesRequestExtensions(llmReq)
+	if requestExt == nil {
+		return body, nil
+	}
+
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(body, &obj); err != nil {
+		return nil, err
+	}
+
+	// Merge raw-only tools back at their original positions
+	if tools, ok := mergeRawOnlyTools(obj["tools"], requestExt); ok {
+		toolsRaw, err := json.Marshal(tools)
+		if err != nil {
+			return nil, err
+		}
+		obj["tools"] = toolsRaw
+	}
+
+	// Merge raw tool_choice if it references tools not structurally represented
+	if len(requestExt.RawToolChoice) > 0 && rawToolChoiceMatchesCurrentTools(requestExt.RawToolChoice, payload.ToolChoice) {
+		obj["tool_choice"] = cloneOutboundRawMessage(requestExt.RawToolChoice)
+	}
+
+	// Merge raw-only input items back at their original positions
+	if input, ok := mergeRawOnlyInputItems(obj["input"], requestExt); ok {
+		obj["input"] = input
+	}
+
+	return json.Marshal(obj)
+}
+
+// mergeRawOnlyTools merges the structured tools array with raw-only tool fragments,
+// preserving their original positions.
+func mergeRawOnlyTools(structuredRaw json.RawMessage, requestExt *model.OpenAIResponsesRequestExtensions) ([]json.RawMessage, bool) {
+	if requestExt == nil || len(requestExt.RawTools) == 0 {
+		return nil, false
+	}
+
+	var structuredTools []json.RawMessage
+	if len(structuredRaw) > 0 {
+		if err := json.Unmarshal(structuredRaw, &structuredTools); err != nil {
+			return nil, false
+		}
+	}
+
+	if !outboundToolSignaturesMatch(structuredTools, requestExt.ToolSignatures) {
+		return nil, false
+	}
+
+	total := len(structuredTools) + len(requestExt.RawTools)
+	tools := make([]json.RawMessage, 0, total)
+	structuredIndex := 0
+	rawByIndex := make(map[int]json.RawMessage, len(requestExt.RawTools))
+	for _, fragment := range requestExt.RawTools {
+		if len(fragment.Raw) == 0 || fragment.OriginalIndex < 0 {
+			return nil, false
+		}
+		rawByIndex[fragment.OriginalIndex] = cloneOutboundRawMessage(fragment.Raw)
+	}
+
+	for i := 0; i < total; i++ {
+		if raw, ok := rawByIndex[i]; ok {
+			tools = append(tools, raw)
+			continue
+		}
+		if structuredIndex >= len(structuredTools) {
+			return nil, false
+		}
+		tools = append(tools, cloneOutboundRawMessage(structuredTools[structuredIndex]))
+		structuredIndex++
+	}
+
+	if structuredIndex != len(structuredTools) {
+		return nil, false
+	}
+
+	return tools, true
+}
+
+// outboundToolSignaturesMatch verifies that the structured tools match the expected signatures,
+// ensuring no tools were added/removed since the request was parsed.
+func outboundToolSignaturesMatch(structuredTools []json.RawMessage, expected []string) bool {
+	if len(structuredTools) != len(expected) {
+		return false
+	}
+	for i, rawTool := range structuredTools {
+		var tool ResponsesTool
+		if err := json.Unmarshal(rawTool, &tool); err != nil {
+			return false
+		}
+		if outboundResponseToolSignature(tool) != expected[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// outboundResponseToolSignature returns a stable signature for a Responses API tool.
+func outboundResponseToolSignature(tool ResponsesTool) string {
+	switch tool.Type {
+	case "function":
+		return "function:" + tool.Name
+	default:
+		return tool.Type
+	}
+}
+
+// rawToolChoiceMatchesCurrentTools checks whether the raw tool choice still
+// references the same tools as the current structured tool choice.
+func rawToolChoiceMatchesCurrentTools(raw json.RawMessage, current *ResponsesToolChoice) bool {
+	if current == nil {
+		return true
+	}
+	var rawChoice ResponsesToolChoice
+	if err := json.Unmarshal(raw, &rawChoice); err != nil {
+		return false
+	}
+	currentSig := outboundToolChoiceSignature(current)
+	if currentSig == "" {
+		return true
+	}
+	return outboundToolChoiceSignature(&rawChoice) == currentSig
+}
+
+// outboundToolChoiceSignature returns a stable signature for a tool choice.
+func outboundToolChoiceSignature(choice *ResponsesToolChoice) string {
+	if choice == nil {
+		return ""
+	}
+	if choice.Mode != nil {
+		return "mode:" + *choice.Mode
+	}
+	if choice.Type != nil && choice.Name != nil {
+		return "named:" + *choice.Type + ":" + *choice.Name
+	}
+	if len(choice.Tools) > 0 {
+		return "tools"
+	}
+	return ""
+}
+
+// mergeRawOnlyInputItems merges raw-only input items back into the input array.
+func mergeRawOnlyInputItems(inputRaw json.RawMessage, requestExt *model.OpenAIResponsesRequestExtensions) (json.RawMessage, bool) {
+	if requestExt == nil || len(requestExt.RawInputItems) == 0 {
+		return nil, false
+	}
+
+	// input can be a string or an array
+	var inputItems []json.RawMessage
+	if len(inputRaw) > 0 {
+		if err := json.Unmarshal(inputRaw, &inputItems); err != nil {
+			// input is likely a simple string, can't merge raw items
+			return nil, false
+		}
+	}
+
+	rawByIndex := make(map[int]json.RawMessage, len(requestExt.RawInputItems))
+	for _, fragment := range requestExt.RawInputItems {
+		if len(fragment.Raw) == 0 || fragment.OriginalIndex < 0 {
+			continue
+		}
+		rawByIndex[fragment.OriginalIndex] = cloneOutboundRawMessage(fragment.Raw)
+	}
+
+	// Count how many raw items are before/after structured items to determine total size
+	total := len(inputItems) + len(requestExt.RawInputItems)
+	merged := make([]json.RawMessage, 0, total)
+	structuredIndex := 0
+
+	for i := 0; i < total; i++ {
+		if raw, ok := rawByIndex[i]; ok {
+			merged = append(merged, raw)
+			continue
+		}
+		if structuredIndex < len(inputItems) {
+			merged = append(merged, cloneOutboundRawMessage(inputItems[structuredIndex]))
+			structuredIndex++
+		}
+	}
+
+	return json.Marshal(merged)
+}
+
+// cloneOutboundRawMessage safely clones a json.RawMessage.
+func cloneOutboundRawMessage(src json.RawMessage) json.RawMessage {
+	if len(src) == 0 {
+		return nil
+	}
+	return append(json.RawMessage(nil), src...)
 }

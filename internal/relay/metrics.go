@@ -29,6 +29,7 @@ type RelayMetrics struct {
 	// 统计指标
 	ActualModel string
 	Stats       model.StatsMetrics
+	usage       *llm.Usage // 原始 usage，用于 saveLog 提取细分 token
 
 	// 参数覆盖
 	ParamOverride string
@@ -40,6 +41,7 @@ func (m *RelayMetrics) RecordUsage(usage *llm.Usage) {
 	}
 
 	// usage 已由 axonhub/llm 标准化；octopus 仍使用本地模型价格表计算成本，所以这里只做用量落点和价格换算。
+	m.usage = usage
 	m.Stats.InputToken = usage.PromptTokens
 	m.Stats.OutputToken = usage.CompletionTokens
 
@@ -152,13 +154,30 @@ func (m *RelayMetrics) saveLog(ctx context.Context, err error, duration time.Dur
 	}
 
 	// 用量
-	if m.Stats.InputToken > 0 || m.Stats.OutputToken > 0 {
-		relayLog.InputTokens = int(m.Stats.InputToken)
-		relayLog.OutputTokens = int(m.Stats.OutputToken)
-		relayLog.CachedTokens = int(m.Stats.CachedTokens)
-		relayLog.CacheHitRate = m.CacheHitRate()
-		relayLog.Cost = m.Stats.InputCost + m.Stats.OutputCost
+	if m.usage != nil {
+		relayLog.PromptTokens = m.usage.PromptTokens
+		relayLog.CompletionTokens = m.usage.CompletionTokens
+		relayLog.TotalTokens = m.usage.TotalTokens
+		if d := m.usage.PromptTokensDetails; d != nil {
+			relayLog.PromptAudioTokens = d.AudioTokens
+			relayLog.PromptCachedTokens = d.CachedTokens
+			relayLog.PromptWriteCachedTokens = d.WriteCachedTokens
+			relayLog.PromptWriteCached5m = d.WriteCached5MinTokens
+			relayLog.PromptWriteCached1h = d.WriteCached1HourTokens
+		}
+		if d := m.usage.CompletionTokensDetails; d != nil {
+			relayLog.CompletionAudioTokens = d.AudioTokens
+			relayLog.CompletionReasonTokens = d.ReasoningTokens
+			relayLog.CompletionAcceptedPred = d.AcceptedPredictionTokens
+			relayLog.CompletionRejectedPred = d.RejectedPredictionTokens
+		}
+	} else if m.Stats.InputToken > 0 || m.Stats.OutputToken > 0 {
+		relayLog.PromptTokens = m.Stats.InputToken
+		relayLog.CompletionTokens = m.Stats.OutputToken
+		relayLog.TotalTokens = m.Stats.InputToken + m.Stats.OutputToken
+		relayLog.PromptCachedTokens = m.Stats.CachedTokens
 	}
+	relayLog.TotalCost = m.Stats.InputCost + m.Stats.OutputCost
 
 	relayLog.RequestContent = m.requestContent()
 	if len(m.InternalResponse) > 0 {

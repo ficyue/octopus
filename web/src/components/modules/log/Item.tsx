@@ -259,20 +259,20 @@ export function LogCard({ log }: { log: RelayLog }) {
                                 <div className="flex items-center gap-2 flex-wrap">
                                     <span className="flex items-center gap-1">
                                         <ArrowDownToLine className="size-3.5 shrink-0 text-green-500" />
-                                        <span>{t('inputTokens')} {log.input_tokens.toLocaleString()}</span>
+                                        <span>{t('inputTokens')} {log.prompt_tokens.toLocaleString()}</span>
                                     </span>
                                     <span className="text-muted-foreground/50">|</span>
                                     <span className="flex items-center gap-1">
                                         <ArrowUpFromLine className="size-3.5 shrink-0 text-purple-500" />
-                                        <span>{t('outputTokens')} {log.output_tokens.toLocaleString()}</span>
+                                        <span>{t('outputTokens')} {log.completion_tokens.toLocaleString()}</span>
                                     </span>
                                     <span className="text-muted-foreground/50">|</span>
                                     <span className="flex items-center gap-1">
                                         <Database className="size-3.5 shrink-0 text-amber-500" />
-                                        <span>{t('cachedTokens')} {(log.cached_tokens || 0).toLocaleString()}</span>
-                                        {(log.cache_hit_rate > 0 || (log.cached_tokens || 0) > 0) && (
+                                        <span>{t('cachedTokens')} {(log.prompt_cached_tokens || 0).toLocaleString()}</span>
+                                        {((log.prompt_cached_tokens || 0) > 0) && (
                                             <span className="text-xs text-amber-600 dark:text-amber-400">
-                                                ({(log.cache_hit_rate * 100).toFixed(1)}%)
+                                                ({log.prompt_tokens > 0 ? ((log.prompt_cached_tokens / log.prompt_tokens) * 100).toFixed(1) : "0.0"}%)
                                             </span>
                                         )}
                                     </span>
@@ -280,13 +280,13 @@ export function LogCard({ log }: { log: RelayLog }) {
                                     <span className="flex items-center gap-1">
                                         <DollarSign className="size-3.5 shrink-0 text-emerald-500" />
                                         <span className="font-medium text-emerald-600 dark:text-emerald-400">
-                                            {Number(log.cost).toFixed(2)}
+                                            {Number(log.total_cost).toFixed(2)}
                                         </span>
                                     </span>
                                     <span className="text-muted-foreground/50">|</span>
                                     <span className="flex items-center gap-1">
                                         <Zap className="size-3.5 shrink-0 text-orange-500" />
-                                        <span>{log.use_time > 0 ? (log.output_tokens / (log.use_time / 1000)).toFixed(1) : '0'} t/s</span>
+                                        <span>{log.use_time > 0 ? (log.completion_tokens / (log.use_time / 1000)).toFixed(1) : '0'} t/s</span>
                                     </span>
                                 </div>
                             </div>
@@ -446,14 +446,14 @@ export function LogCard({ log }: { log: RelayLog }) {
                                             <div className="flex items-center gap-2 px-3 md:px-4 py-2.5 md:py-3 border-b border-border bg-muted/50 shrink-0">
                                                 <Send className="size-4 text-green-500" />
                                                 <span className="text-sm font-medium text-card-foreground">{t('requestContent')}</span>
-                                                {(log.cached_tokens || 0) > 0 && (
+                                                {(log.prompt_cached_tokens || 0) > 0 && (
                                                     <Badge variant="secondary" className="text-xs">
                                                         <Zap className="size-3 mr-1 text-amber-500" />
-                                                        {log.cached_tokens.toLocaleString()} {t('cachedTokensShort')}
+                                                        {log.prompt_cached_tokens.toLocaleString()} {t('cachedTokensShort')}
                                                     </Badge>
                                                 )}
                                                 <Badge variant="secondary" className="ml-auto text-xs">
-                                                    {log.input_tokens.toLocaleString()} {t('tokens')}
+                                                    {log.prompt_tokens.toLocaleString()} {t('tokens')}
                                                 </Badge>
                                             </div>
                                             <div className="flex-1 overflow-auto min-h-0">
@@ -465,7 +465,7 @@ export function LogCard({ log }: { log: RelayLog }) {
                                                 <MessageSquare className="size-4 text-purple-500" />
                                                 <span className="text-sm font-medium text-card-foreground">{t('responseContent')}</span>
                                                 <Badge variant="secondary" className="ml-auto text-xs">
-                                                    {log.output_tokens.toLocaleString()} {t('tokens')}
+                                                    {log.completion_tokens.toLocaleString()} {t('tokens')}
                                                 </Badge>
                                             </div>
                                             <div className="flex-1 overflow-auto min-h-0">
@@ -500,30 +500,30 @@ export function LogCard({ log }: { log: RelayLog }) {
                             </div>
                             <div className="flex items-center gap-1.5">
                                 <ArrowDownToLine className="size-3.5 text-green-500" />
-                                <span>{t('inputTokens')}: {log.input_tokens.toLocaleString()}</span>
+                                <span>{t('inputTokens')}: {log.prompt_tokens.toLocaleString()}</span>
                             </div>
                             <div className="flex items-center gap-1.5">
                                 <ArrowUpFromLine className="size-3.5 text-purple-500" />
-                                <span>{t('outputTokens')}: {log.output_tokens.toLocaleString()}</span>
+                                <span>{t('outputTokens')}: {log.completion_tokens.toLocaleString()}</span>
                             </div>
                             <div className="flex items-center gap-1.5">
                                 <Database className="size-3.5 text-amber-500" />
-                                <span>{t('cachedTokens')}: {(log.cached_tokens || 0).toLocaleString()}</span>
-                                {(log.cache_hit_rate > 0 || (log.cached_tokens || 0) > 0) && (
+                                <span>{t('cachedTokens')}: {(log.prompt_cached_tokens || 0).toLocaleString()}</span>
+                                {((log.prompt_cached_tokens || 0) > 0) && (
                                     <span className="text-xs text-amber-600 dark:text-amber-400">
-                                        ({(log.cache_hit_rate * 100).toFixed(1)}%)
+                                        ({log.prompt_tokens > 0 ? ((log.prompt_cached_tokens / log.prompt_tokens) * 100).toFixed(1) : "0.0"}%)
                                     </span>
                                 )}
                             </div>
                             <div className="flex items-center gap-1.5">
                                 <DollarSign className="size-3.5 text-emerald-500" />
                                 <span className="font-medium text-emerald-600 dark:text-emerald-400">
-                                    {t('cost')}: {Number(log.cost).toFixed(2)}
+                                    {t('cost')}: {Number(log.total_cost).toFixed(2)}
                                 </span>
                             </div>
                             <div className="flex items-center gap-1.5">
                                 <Zap className="size-3.5 text-orange-500" />
-                                <span>{log.use_time > 0 ? (log.output_tokens / (log.use_time / 1000)).toFixed(1) : '0'} t/s</span>
+                                <span>{log.use_time > 0 ? (log.completion_tokens / (log.use_time / 1000)).toFixed(1) : '0'} t/s</span>
                             </div>
                         </div>
                     </MorphingDialogContent>

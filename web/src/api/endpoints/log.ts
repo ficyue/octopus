@@ -27,6 +27,13 @@ export interface ChannelAttempt {
 /**
  * 日志数据
  */
+export interface CostItem {
+    itemCode: string;
+    quantity: number;
+    price: number;
+    subtotal: number;
+}
+
 export interface RelayLog {
     id: number;
     time: number;                // 时间戳
@@ -35,13 +42,28 @@ export interface RelayLog {
     channel: number;             // 实际使用的渠道ID
     channel_name: string;        // 渠道名称
     actual_model_name: string;   // 实际使用模型名称
-    input_tokens: number;        // 输入Token
-    output_tokens: number;       // 输出Token
-    cached_tokens: number;       // 缓存命中Token
-    cache_hit_rate: number;      // 缓存命中率
+
+    // Token 用量（与 axonhub usage_log 对齐）
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+    prompt_audio_tokens: number;
+    prompt_cached_tokens: number;
+    prompt_write_cached_tokens: number;
+    prompt_write_cached_5m: number;
+    prompt_write_cached_1h: number;
+    completion_audio_tokens: number;
+    completion_reason_tokens: number;
+    completion_accepted_pred: number;
+    completion_rejected_pred: number;
+
+    // 费用
+    total_cost: number;
+    cost_items?: CostItem[];
+
+    // octopus 特有
     ftut: number;                // 首字时间(毫秒)
     use_time: number;            // 总用时(毫秒)
-    cost: number;                // 消耗费用
     request_content: string;     // 请求内容
     response_content: string;    // 响应内容
     error: string;               // 错误信息

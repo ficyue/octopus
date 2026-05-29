@@ -341,9 +341,10 @@ func (m *imagesRelayMetrics) saveLog(ctx context.Context, err error, duration ti
 
 	// Usage
 	if m.Stats.InputToken > 0 || m.Stats.OutputToken > 0 {
-		relayLog.InputTokens = int(m.Stats.InputToken)
-		relayLog.OutputTokens = int(m.Stats.OutputToken)
-		relayLog.Cost = m.Stats.InputCost + m.Stats.OutputCost
+		relayLog.PromptTokens = m.Stats.InputToken
+		relayLog.CompletionTokens = m.Stats.OutputToken
+		relayLog.TotalTokens = m.Stats.InputToken + m.Stats.OutputToken
+		relayLog.TotalCost = m.Stats.InputCost + m.Stats.OutputCost
 	}
 
 	if err != nil {

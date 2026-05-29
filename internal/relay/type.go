@@ -22,9 +22,10 @@ type relayRun struct {
 type relayAttempt struct {
 	*relayRun
 
-	outAdapter transformer.Outbound
-	channel    *dbmodel.Channel
-	usedKey    dbmodel.ChannelKey
+	outAdapter           transformer.Outbound
+	channel              *dbmodel.Channel
+	usedKey              dbmodel.ChannelKey
+	cachedTokensOverride int64 // 从原始响应 input_tokens_details 中提取的缓存 token 数
 }
 
 // hopByHopHeaders 定义不应转发的 HTTP 头

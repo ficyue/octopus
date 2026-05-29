@@ -36,17 +36,12 @@ type RelayMetrics struct {
 
 func (m *RelayMetrics) RecordUsage(usage *llm.Usage) {
 	if usage == nil {
-		log.Warnf("RecordUsage: usage is nil")
 		return
 	}
 
 	// usage 已由 axonhub/llm 标准化；octopus 仍使用本地模型价格表计算成本，所以这里只做用量落点和价格换算。
 	m.Stats.InputToken = usage.PromptTokens
 	m.Stats.OutputToken = usage.CompletionTokens
-
-	log.Infof("RecordUsage: prompt=%d, completion=%d, total=%d, details=%+v, completion_details=%+v",
-		usage.PromptTokens, usage.CompletionTokens, usage.TotalTokens,
-		usage.PromptTokensDetails, usage.CompletionTokensDetails)
 
 	modelPrice := price.GetLLMPrice(m.ActualModel)
 	if modelPrice == nil {

@@ -451,6 +451,14 @@ func (ra *relayAttempt) writeStream(ctx context.Context, clientStream streams.St
 					return nil
 				}
 				ra.metrics.InternalResponse = responseBody
+				// 流式场景下，如果标准解析未拿到缓存信息，用原始流事件中提取的兜底。
+				if ra.cachedTokensOverride > 0 && meta.Usage != nil &&
+					(meta.Usage.PromptTokensDetails == nil || meta.Usage.PromptTokensDetails.CachedTokens == 0) {
+					if meta.Usage.PromptTokensDetails == nil {
+						meta.Usage.PromptTokensDetails = &llm.PromptTokensDetails{}
+					}
+					meta.Usage.PromptTokensDetails.CachedTokens = ra.cachedTokensOverride
+				}
 				ra.metrics.RecordUsage(meta.Usage)
 				return nil
 			}
@@ -517,9 +525,58 @@ func (m *relayPipelineMiddleware) OnOutboundRawError(ctx context.Context, err er
 	}
 }
 
+func (m *relayPipelineMiddleware) OnOutboundRawStream(ctx context.Context, stream streams.Stream[*httpclient.StreamEvent]) (streams.Stream[*httpclient.StreamEvent], error) {
+	if stream == nil {
+		return stream, nil
+	}
+	// 包装原始流，在每个事件中查找 input_tokens_details.cached_tokens
+	return streams.Map(stream, func(event *httpclient.StreamEvent) *httpclient.StreamEvent {
+		if event == nil || len(event.Data) == 0 {
+			return event
+		}
+		var raw struct {
+			Usage struct {
+				InputTokensDetails struct {
+					CachedTokens int64 `json:"cached_tokens"`
+				} `json:"input_tokens_details"`
+			} `json:"usage"`
+		}
+		if json.Unmarshal(event.Data, &raw) == nil && raw.Usage.InputTokensDetails.CachedTokens > 0 {
+			m.attempt.cachedTokensOverride = raw.Usage.InputTokensDetails.CachedTokens
+		}
+		return event
+	}), nil
+}
+
+func (m *relayPipelineMiddleware) OnOutboundRawResponse(ctx context.Context, response *httpclient.Response) (*httpclient.Response, error) {
+	if response != nil && len(response.Body) > 0 {
+		// 部分上游返回 input_tokens_details 而非标准的 prompt_tokens_details，
+		// axonhub/llm 只解析后者，这里从原始 JSON 中提取缓存信息备用。
+		var raw struct {
+			Usage struct {
+				InputTokensDetails struct {
+					CachedTokens int64 `json:"cached_tokens"`
+				} `json:"input_tokens_details"`
+			} `json:"usage"`
+		}
+		if json.Unmarshal(response.Body, &raw) == nil && raw.Usage.InputTokensDetails.CachedTokens > 0 {
+			m.attempt.cachedTokensOverride = raw.Usage.InputTokensDetails.CachedTokens
+		}
+	}
+	return response, nil
+}
+
 func (m *relayPipelineMiddleware) OnOutboundLlmResponse(ctx context.Context, response *llm.Response) (*llm.Response, error) {
 	if response != nil {
 		// 非流式 usage 已由 outbound transformer 标准化到 llm.Response；流式 usage 在最终聚合时记录，避免重复计数。
+		// 如果标准解析未拿到缓存信息，用原始 JSON 中提取的兜底。
+		if m.attempt.cachedTokensOverride > 0 && response.Usage != nil &&
+			(response.Usage.PromptTokensDetails == nil || response.Usage.PromptTokensDetails.CachedTokens == 0) {
+			if response.Usage.PromptTokensDetails == nil {
+				response.Usage.PromptTokensDetails = &llm.PromptTokensDetails{}
+			}
+			response.Usage.PromptTokensDetails.CachedTokens = m.attempt.cachedTokensOverride
+		}
 		m.attempt.metrics.RecordUsage(response.Usage)
 	}
 	return response, nil

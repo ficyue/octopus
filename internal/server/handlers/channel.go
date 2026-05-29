@@ -16,8 +16,13 @@ import (
 	"github.com/bestruirui/octopus/internal/server/resp"
 	"github.com/bestruirui/octopus/internal/server/router"
 	"github.com/bestruirui/octopus/internal/task"
-	transformerModel "github.com/bestruirui/octopus/internal/transformer/model"
 	"github.com/bestruirui/octopus/internal/transformer/outbound"
+	"github.com/looplj/axonhub/llm"
+	"github.com/looplj/axonhub/llm/httpclient"
+	"github.com/looplj/axonhub/llm/transformer"
+	"github.com/looplj/axonhub/llm/transformer/anthropic"
+	"github.com/looplj/axonhub/llm/transformer/openai"
+	"github.com/looplj/axonhub/llm/transformer/openai/responses"
 	"github.com/gin-gonic/gin"
 )
 
@@ -237,8 +242,8 @@ func testChannel(c *gin.Context) {
 		return
 	}
 
-	outAdapter := outbound.Get(channel.Type)
-	if outAdapter == nil {
+	outAdapter, err := testNewOutbound(channel.Type, baseUrl, usedKey.ChannelKey)
+	if outAdapter == nil || err != nil {
 		resp.Error(c, http.StatusBadRequest, "unsupported channel type")
 		return
 	}
@@ -248,7 +253,6 @@ func testChannel(c *gin.Context) {
 		testMessage = "Hello, please say hi and introduce yourself briefly."
 	}
 
-	// 从渠道的模型列表中取第一个模型作为测试模型
 	var testModel string
 	for _, field := range []string{channel.Model, channel.CustomModel} {
 		for _, m := range strings.Split(field, ",") {
@@ -266,14 +270,14 @@ func testChannel(c *gin.Context) {
 		testModel = "gpt-3.5-turbo"
 	}
 
-	internalReq := &transformerModel.InternalLLMRequest{
+	llmReq := &llm.Request{
 		Model:       testModel,
-		MaxTokens:   ptrInt64(128),
-		Temperature: ptrFloat64(0.7),
-		Messages: []transformerModel.Message{
+		MaxTokens:   int64Ptr(128),
+		Temperature: float64Ptr(0.7),
+		Messages: []llm.Message{
 			{
 				Role: "user",
-				Content: transformerModel.MessageContent{
+				Content: llm.MessageContent{
 					Content: &testMessage,
 				},
 			},
@@ -283,7 +287,7 @@ func testChannel(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), channelTestTimeout)
 	defer cancel()
 
-	httpReq, err := outAdapter.TransformRequest(ctx, internalReq, baseUrl, usedKey.ChannelKey)
+	outReq, err := outAdapter.TransformRequest(ctx, llmReq)
 	if err != nil {
 		resp.Error(c, http.StatusInternalServerError, fmt.Sprintf("failed to build request: %v", err))
 		return
@@ -291,7 +295,7 @@ func testChannel(c *gin.Context) {
 
 	for _, header := range channel.CustomHeader {
 		if header.HeaderKey != "" {
-			httpReq.Header.Set(header.HeaderKey, header.HeaderValue)
+			outReq.Headers.Set(header.HeaderKey, header.HeaderValue)
 		}
 	}
 
@@ -302,6 +306,12 @@ func testChannel(c *gin.Context) {
 	}
 
 	startTime := time.Now()
+	httpReq, err := httpclient.BuildHttpRequest(ctx, outReq)
+	if err != nil {
+		resp.Error(c, http.StatusInternalServerError, fmt.Sprintf("failed to build http request: %v", err))
+		return
+	}
+
 	httpResp, err := httpClient.Do(httpReq)
 	if err != nil {
 		resp.Error(c, http.StatusInternalServerError, fmt.Sprintf("request failed: %v", err))
@@ -311,17 +321,32 @@ func testChannel(c *gin.Context) {
 
 	latencyMs := time.Since(startTime).Milliseconds()
 
-	if httpResp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(httpResp.Body)
+	respBody, err := io.ReadAll(httpResp.Body)
+	if err != nil {
 		resp.Success(c, ChannelTestResponse{
 			Success:   false,
 			LatencyMs: latencyMs,
-			Error:     fmt.Sprintf("HTTP %d: %s", httpResp.StatusCode, string(body)),
+			Error:     fmt.Sprintf("failed to read response: %v", err),
 		})
 		return
 	}
 
-	internalResp, err := outAdapter.TransformResponse(ctx, httpResp)
+	if httpResp.StatusCode != http.StatusOK {
+		resp.Success(c, ChannelTestResponse{
+			Success:   false,
+			LatencyMs: latencyMs,
+			Error:     fmt.Sprintf("HTTP %d: %s", httpResp.StatusCode, string(respBody)),
+		})
+		return
+	}
+
+	clientResp := &httpclient.Response{
+		StatusCode: httpResp.StatusCode,
+		Headers:    httpResp.Header,
+		Body:       respBody,
+	}
+
+	llmResp, err := outAdapter.TransformResponse(ctx, clientResp)
 	if err != nil {
 		resp.Success(c, ChannelTestResponse{
 			Success:   false,
@@ -333,23 +358,40 @@ func testChannel(c *gin.Context) {
 
 	result := ChannelTestResponse{
 		Success:   true,
-		Model:     internalResp.Model,
+		Model:     llmResp.Model,
 		LatencyMs: latencyMs,
 	}
 
-	if internalResp.Usage != nil {
-		result.TokensIn = int(internalResp.Usage.PromptTokens)
-		result.TokensOut = int(internalResp.Usage.CompletionTokens)
+	if llmResp.Usage != nil {
+		result.TokensIn = int(llmResp.Usage.PromptTokens)
+		result.TokensOut = int(llmResp.Usage.CompletionTokens)
 	}
 
-	if len(internalResp.Choices) > 0 && internalResp.Choices[0].Message != nil {
-		if internalResp.Choices[0].Message.Content.Content != nil {
-			result.Content = *internalResp.Choices[0].Message.Content.Content
+	if len(llmResp.Choices) > 0 && llmResp.Choices[0].Message != nil {
+		if llmResp.Choices[0].Message.Content.Content != nil {
+			result.Content = *llmResp.Choices[0].Message.Content.Content
 		}
 	}
 
 	resp.Success(c, result)
 }
 
-func ptrInt64(v int64) *int64   { return &v }
-func ptrFloat64(v float64) *float64 { return &v }
+func testNewOutbound(channelType outbound.OutboundType, baseURL, key string) (transformer.Outbound, error) {
+	switch channelType {
+	case outbound.OutboundTypeOpenAIChat:
+		return openai.NewOutboundTransformer(baseURL, key)
+	case outbound.OutboundTypeOpenAIResponse:
+		return responses.NewOutboundTransformer(baseURL, key)
+	case outbound.OutboundTypeAnthropic:
+		return anthropic.NewOutboundTransformer(baseURL, key)
+	case outbound.OutboundTypeGemini:
+		return openai.NewOutboundTransformer(baseURL, key)
+	case outbound.OutboundTypeOpenAIEmbedding:
+		return openai.NewOutboundTransformer(baseURL, key)
+	default:
+		return nil, fmt.Errorf("unsupported channel type: %d", channelType)
+	}
+}
+
+func int64Ptr(v int64) *int64   { return &v }
+func float64Ptr(v float64) *float64 { return &v }

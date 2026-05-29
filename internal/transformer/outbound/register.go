@@ -1,71 +1,14 @@
 package outbound
 
-import (
-	"github.com/bestruirui/octopus/internal/transformer/model"
-	"github.com/bestruirui/octopus/internal/transformer/outbound/authropic"
-	"github.com/bestruirui/octopus/internal/transformer/outbound/gemini"
-	"github.com/bestruirui/octopus/internal/transformer/outbound/openai"
-	"github.com/bestruirui/octopus/internal/transformer/outbound/volcengine"
-)
-
+// OutboundType is the channel type stored in database as integer.
+// It is kept for backward compatibility; new code should use llm.APIFormat.
 type OutboundType int
 
 const (
-	OutboundTypeOpenAIChat OutboundType = iota
-	OutboundTypeOpenAIResponse
-	OutboundTypeAnthropic
-	OutboundTypeGemini
-	OutboundTypeVolcengine
-	OutboundTypeOpenAIEmbedding
+	OutboundTypeOpenAIChat      OutboundType = 0
+	OutboundTypeOpenAIResponse  OutboundType = 1
+	OutboundTypeAnthropic       OutboundType = 2
+	OutboundTypeGemini          OutboundType = 3
+	OutboundTypeVolcengine      OutboundType = 4
+	OutboundTypeOpenAIEmbedding OutboundType = 5
 )
-
-// EmbeddingChannelTypes 定义支持 embedding 请求的 channel 类型集合
-var EmbeddingChannelTypes = map[OutboundType]bool{
-	OutboundTypeOpenAIEmbedding: true,
-}
-
-// ChatChannelTypes 定义支持 chat 请求的 channel 类型集合
-var ChatChannelTypes = map[OutboundType]bool{
-	OutboundTypeOpenAIChat:     true,
-	OutboundTypeOpenAIResponse: true,
-	OutboundTypeAnthropic:      true,
-	OutboundTypeGemini:         true,
-	OutboundTypeVolcengine:     true,
-}
-
-// IsEmbeddingChannelType 判断 channel 类型是否支持 embedding 请求
-func IsEmbeddingChannelType(channelType OutboundType) bool {
-	return EmbeddingChannelTypes[channelType]
-}
-
-// IsChatChannelType 判断 channel 类型是否支持 chat 请求
-func IsChatChannelType(channelType OutboundType) bool {
-	return ChatChannelTypes[channelType]
-}
-
-// StreamOnlyChannelTypes 定义只支持流式响应的渠道类型
-// Anthropic Messages API 必须使用流式才能获取完整 thinking/reasoning 信息
-var StreamOnlyChannelTypes = map[OutboundType]bool{
-	OutboundTypeAnthropic: true,
-}
-
-// IsStreamOnlyChannelType 判断渠道是否只支持流式响应
-func IsStreamOnlyChannelType(channelType OutboundType) bool {
-	return StreamOnlyChannelTypes[channelType]
-}
-
-var outboundFactories = map[OutboundType]func() model.Outbound{
-	OutboundTypeOpenAIChat:      func() model.Outbound { return &openai.ChatOutbound{} },
-	OutboundTypeOpenAIResponse:  func() model.Outbound { return &openai.ResponseOutbound{} },
-	OutboundTypeOpenAIEmbedding: func() model.Outbound { return &openai.EmbeddingOutbound{} },
-	OutboundTypeAnthropic:       func() model.Outbound { return &authropic.MessageOutbound{} },
-	OutboundTypeGemini:          func() model.Outbound { return &gemini.MessagesOutbound{} },
-	OutboundTypeVolcengine:      func() model.Outbound { return &volcengine.ResponseOutbound{} },
-}
-
-func Get(outboundType OutboundType) model.Outbound {
-	if factory, ok := outboundFactories[outboundType]; ok {
-		return factory()
-	}
-	return nil
-}

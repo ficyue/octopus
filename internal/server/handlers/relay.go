@@ -6,8 +6,7 @@ import (
 	"github.com/bestruirui/octopus/internal/relay"
 	"github.com/bestruirui/octopus/internal/server/middleware"
 	"github.com/bestruirui/octopus/internal/server/router"
-	"github.com/bestruirui/octopus/internal/transformer/inbound"
-	"github.com/gin-gonic/gin"
+	"github.com/looplj/axonhub/llm"
 )
 
 func init() {
@@ -16,31 +15,18 @@ func init() {
 		Use(middleware.RequireJSON()).
 		AddRoute(
 			router.NewRoute("/chat/completions", http.MethodPost).
-				Handle(chat),
+				Handle(relay.Handler(llm.APIFormatOpenAIChatCompletion)),
 		).
 		AddRoute(
 			router.NewRoute("/responses", http.MethodPost).
-				Handle(response),
+				Handle(relay.Handler(llm.APIFormatOpenAIResponse)),
 		).
 		AddRoute(
 			router.NewRoute("/messages", http.MethodPost).
-				Handle(message),
+				Handle(relay.Handler(llm.APIFormatAnthropicMessage)),
 		).
 		AddRoute(
 			router.NewRoute("/embeddings", http.MethodPost).
-				Handle(embedding),
+				Handle(relay.Handler(llm.APIFormatOpenAIEmbedding)),
 		)
-}
-
-func chat(c *gin.Context) {
-	relay.Handler(inbound.InboundTypeOpenAIChat, c)
-}
-func response(c *gin.Context) {
-	relay.Handler(inbound.InboundTypeOpenAIResponse, c)
-}
-func message(c *gin.Context) {
-	relay.Handler(inbound.InboundTypeAnthropic, c)
-}
-func embedding(c *gin.Context) {
-	relay.Handler(inbound.InboundTypeOpenAIEmbedding, c)
 }

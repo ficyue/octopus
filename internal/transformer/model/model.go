@@ -560,8 +560,6 @@ type Message struct {
 }
 
 func (m *Message) ClearHelpFields() {
-	m.ReasoningContent = nil
-	m.Reasoning = nil
 	m.ReasoningSignature = nil
 }
 

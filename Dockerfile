@@ -13,7 +13,7 @@ COPY web/src ./src
 
 RUN pnpm run build 2>&1; RC=$?; echo "=== NEXT BUILD EXIT CODE: $RC ==="; exit $RC
 
-FROM golang:1.24-alpine AS go-builder
+FROM golang:1.26-alpine AS go-builder
 
 WORKDIR /src
 

@@ -539,10 +539,17 @@ func (m *relayPipelineMiddleware) OnOutboundRawStream(ctx context.Context, strea
 				InputTokensDetails struct {
 					CachedTokens int64 `json:"cached_tokens"`
 				} `json:"input_tokens_details"`
+				CacheReadInputTokens int64 `json:"cache_read_input_tokens"`
 			} `json:"usage"`
 		}
-		if json.Unmarshal(event.Data, &raw) == nil && raw.Usage.InputTokensDetails.CachedTokens > 0 {
-			m.attempt.cachedTokensOverride = raw.Usage.InputTokensDetails.CachedTokens
+		if json.Unmarshal(event.Data, &raw) == nil {
+			cached := raw.Usage.InputTokensDetails.CachedTokens
+			if cached == 0 {
+				cached = raw.Usage.CacheReadInputTokens
+			}
+			if cached > 0 {
+				m.attempt.cachedTokensOverride = cached
+			}
 		}
 		return event
 	}), nil
@@ -557,10 +564,17 @@ func (m *relayPipelineMiddleware) OnOutboundRawResponse(ctx context.Context, res
 				InputTokensDetails struct {
 					CachedTokens int64 `json:"cached_tokens"`
 				} `json:"input_tokens_details"`
+				CacheReadInputTokens int64 `json:"cache_read_input_tokens"`
 			} `json:"usage"`
 		}
-		if json.Unmarshal(response.Body, &raw) == nil && raw.Usage.InputTokensDetails.CachedTokens > 0 {
-			m.attempt.cachedTokensOverride = raw.Usage.InputTokensDetails.CachedTokens
+		if json.Unmarshal(response.Body, &raw) == nil {
+			cached := raw.Usage.InputTokensDetails.CachedTokens
+			if cached == 0 {
+				cached = raw.Usage.CacheReadInputTokens
+			}
+			if cached > 0 {
+				m.attempt.cachedTokensOverride = cached
+			}
 		}
 	}
 	return response, nil

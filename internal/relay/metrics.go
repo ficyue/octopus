@@ -67,11 +67,12 @@ func (m *RelayMetrics) Save(ctx context.Context, success bool, err error, attemp
 	duration := time.Since(m.StartTime)
 
 	globalStats := model.StatsMetrics{
-		WaitTime:    duration.Milliseconds(),
-		InputToken:  m.Stats.InputToken,
-		OutputToken: m.Stats.OutputToken,
-		InputCost:   m.Stats.InputCost,
-		OutputCost:  m.Stats.OutputCost,
+		WaitTime:     duration.Milliseconds(),
+		InputToken:   m.Stats.InputToken,
+		OutputToken:  m.Stats.OutputToken,
+		CachedTokens: m.Stats.CachedTokens,
+		InputCost:    m.Stats.InputCost,
+		OutputCost:   m.Stats.OutputCost,
 	}
 	if success {
 		globalStats.RequestSuccess = 1
@@ -87,10 +88,11 @@ func (m *RelayMetrics) Save(ctx context.Context, success bool, err error, attemp
 	if channelID > 0 {
 		// 通道成功/失败和等待时间在每次 attempt 结束时已记录；这里仅把最终响应的用量成本归到实际通道，避免重复计数。
 		op.StatsChannelUpdate(channelID, model.StatsMetrics{
-			InputToken:  m.Stats.InputToken,
-			OutputToken: m.Stats.OutputToken,
-			InputCost:   m.Stats.InputCost,
-			OutputCost:  m.Stats.OutputCost,
+			InputToken:   m.Stats.InputToken,
+			OutputToken:  m.Stats.OutputToken,
+			CachedTokens: m.Stats.CachedTokens,
+			InputCost:    m.Stats.InputCost,
+			OutputCost:   m.Stats.OutputCost,
 		})
 	}
 
@@ -153,6 +155,8 @@ func (m *RelayMetrics) saveLog(ctx context.Context, err error, duration time.Dur
 	if m.Stats.InputToken > 0 || m.Stats.OutputToken > 0 {
 		relayLog.InputTokens = int(m.Stats.InputToken)
 		relayLog.OutputTokens = int(m.Stats.OutputToken)
+		relayLog.CachedTokens = int(m.Stats.CachedTokens)
+		relayLog.CacheHitRate = m.CacheHitRate()
 		relayLog.Cost = m.Stats.InputCost + m.Stats.OutputCost
 	}
 

@@ -338,6 +338,38 @@ type ResponsesReasoningSummary struct {
 	Text string `json:"text"`
 }
 
+// UnmarshalJSON handles arguments field that can be either a string or a JSON object.
+// Some providers return arguments as a structured object instead of a JSON string.
+func (item *ResponsesItem) UnmarshalJSON(data []byte) error {
+	type itemAlias ResponsesItem
+	raw := struct {
+		itemAlias
+		Arguments json.RawMessage `json:"arguments"`
+	}{}
+
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	*item = ResponsesItem(raw.itemAlias)
+	if len(raw.Arguments) == 0 || bytes.Equal(raw.Arguments, []byte("null")) {
+		return nil
+	}
+
+	var arguments string
+	if err := json.Unmarshal(raw.Arguments, &arguments); err == nil {
+		item.Arguments = arguments
+		return nil
+	}
+
+	var compacted bytes.Buffer
+	if err := json.Compact(&compacted, raw.Arguments); err != nil {
+		return err
+	}
+	item.Arguments = compacted.String()
+	return nil
+}
+
 type ResponsesAnnotation struct {
 	Type       string  `json:"type"`
 	StartIndex *int    `json:"start_index,omitempty"`

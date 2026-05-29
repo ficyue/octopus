@@ -95,25 +95,31 @@ func (r *relayRun) run() {
 		default:
 		}
 
-		attempt, err := r.prepareAttempt()
-		if err != nil {
-			lastErr = err
-			continue
-		}
-		if attempt == nil {
-			continue
-		}
+		// 内层循环：遍历当前渠道的所有可用 key
+		triedKeyIDs := make(map[int]bool)
+		for {
+			attempt, err := r.prepareAttempt(triedKeyIDs)
+			if err != nil {
+				lastErr = err
+				break
+			}
+			if attempt == nil {
+				break
+			}
 
-		written, err := attempt.run()
-		if err == nil {
-			r.metrics.Save(ctx, true, nil, r.iter.Attempts())
-			return
+			triedKeyIDs[attempt.usedKey.ID] = true
+			written, err := attempt.run()
+			if err == nil {
+				r.metrics.Save(ctx, true, nil, r.iter.Attempts())
+				return
+			}
+			if written {
+				r.metrics.Save(ctx, false, err, r.iter.Attempts())
+				return
+			}
+			lastErr = err
+			// 当前 key 失败，继续尝试下一个 key
 		}
-		if written {
-			r.metrics.Save(ctx, false, err, r.iter.Attempts())
-			return
-		}
-		lastErr = err
 	}
 
 	if lastErr == nil {
@@ -133,7 +139,7 @@ func (r *relayRun) run() {
 
 // prepareAttempt 遍历当前渠道的所有可用 key，逐个尝试。
 // 如果所有 key 都因熔断跳过，返回 nil 以便上层继续尝试下一个渠道。
-func (r *relayRun) prepareAttempt() (*relayAttempt, error) {
+func (r *relayRun) prepareAttempt(triedKeyIDs map[int]bool) (*relayAttempt, error) {
 	item := r.iter.Item()
 	channel, err := op.ChannelGet(item.ChannelID, r.c.Request.Context())
 	if err != nil {
@@ -156,6 +162,9 @@ func (r *relayRun) prepareAttempt() (*relayAttempt, error) {
 
 	// 遍历该渠道的所有可用 key
 	for _, usedKey := range availableKeys {
+		if triedKeyIDs[usedKey.ID] {
+			continue
+		}
 		if r.iter.SkipCircuitBreak(channel.ID, usedKey.ID, channel.Name) {
 			continue
 		}

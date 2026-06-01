@@ -292,7 +292,6 @@ func (ra *relayAttempt) forward() (int, error) {
 			&parsedRequestInbound{Inbound: ra.inAdapter, request: ra.internalRequest},
 			ra.outAdapter,
 			pipeline.WithMiddlewares(stream.EnsureUsage(), relayMiddleware),
-			pipeline.WithEmptyResponseDetection(),
 		).
 		Process(ctx, ra.internalRequest.RawRequest)
 	if err != nil {

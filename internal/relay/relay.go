@@ -515,6 +515,9 @@ func (ra *relayAttempt) writeStream(ctx context.Context, clientStream streams.St
 
 			ra.c.SSEvent(r.event.Type, r.event.Data)
 			ra.c.Writer.Flush()
+			if len(responseEvents) <= 3 {
+				log.Infof("SSEvent written: type=%q data_len=%d", r.event.Type, len(r.event.Data))
+			}
 		}
 	}
 }

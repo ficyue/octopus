@@ -517,10 +517,13 @@ func (ra *relayAttempt) writeStream(ctx context.Context, clientStream streams.St
 				}
 			}
 
-			// 直接写入 SSE 格式，避免 Gin SSEvent 添加 event: 前缀
+			// 直接写入 SSE 格式；有 event type 时写 event 行（Responses/Anthropic），否则只写 data（Chat Completions）
+			if r.event.Type != "" {
+				ra.c.Writer.Write([]byte("event: " + r.event.Type + "\n"))
+			}
 			ra.c.Writer.Write([]byte("data: "))
 			ra.c.Writer.Write(r.event.Data)
-			ra.c.Writer.Write([]byte{0x0a, 0x0a})
+			ra.c.Writer.Write([]byte("\n\n"))
 			ra.c.Writer.Flush()
 			if len(responseEvents) <= 3 {
 				log.Infof("SSEvent written: data_len=%d", len(r.event.Data))

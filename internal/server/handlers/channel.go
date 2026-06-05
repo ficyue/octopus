@@ -250,7 +250,7 @@ func testChannel(c *gin.Context) {
 
 	testMessage := req.Message
 	if testMessage == "" {
-		testMessage = "Hello, please say hi and introduce yourself briefly."
+		testMessage = "Hi"
 	}
 
 	var testModel string
@@ -273,7 +273,7 @@ func testChannel(c *gin.Context) {
 	stream := false
 	llmReq := &llm.Request{
 		Model:       testModel,
-		MaxTokens:   int64Ptr(4096),
+		MaxTokens:   int64Ptr(8192),
 		Temperature: float64Ptr(0.7),
 		Stream:      &stream,
 		Messages: []llm.Message{

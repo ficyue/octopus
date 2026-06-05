@@ -304,6 +304,17 @@ func (ra *relayAttempt) forward() (int, error) {
 		result.Stream, result.Response != nil,
 		func() int { if result.Response != nil { return len(result.Response.Body) }; return 0 }())
 	if result.Stream {
+		// 客户端未请求流式但 pipeline 返回了流（上游自动升级），需要聚合成完整响应。
+		if ra.internalRequest.Stream == nil || !*ra.internalRequest.Stream {
+			log.Infof("client requested non-stream but got stream, auto-aggregating")
+			response, err := ra.autoAggregateStream(ctx, result.EventStream)
+			if err != nil {
+				return http.StatusOK, err
+			}
+			ra.metrics.InternalResponse = response.Body
+			ra.c.Data(http.StatusOK, "application/json", response.Body)
+			return http.StatusOK, nil
+		}
 		if err := ra.writeStream(ctx, result.EventStream); err != nil {
 			return http.StatusOK, err
 		}
@@ -596,6 +607,46 @@ func (m *relayPipelineMiddleware) OnOutboundLlmResponse(ctx context.Context, res
 		m.attempt.metrics.RecordUsage(response.Usage)
 	}
 	return response, nil
+}
+
+// autoAggregateStream 把 pipeline 输出的客户端格式流聚合成完整响应体，
+// 用于客户端未请求流式但上游返回流式的场景。
+func (ra *relayAttempt) autoAggregateStream(ctx context.Context, clientStream streams.Stream[*httpclient.StreamEvent]) (*httpclient.Response, error) {
+	if clientStream == nil {
+		return nil, fmt.Errorf("stream is nil")
+	}
+	defer clientStream.Close()
+
+	chunks := make([]*httpclient.StreamEvent, 0, 8)
+	for clientStream.Next() {
+		event := clientStream.Current()
+		if event != nil {
+			chunks = append(chunks, event)
+		}
+	}
+	if err := clientStream.Err(); err != nil {
+		return nil, fmt.Errorf("stream read error: %w", err)
+	}
+	if len(chunks) == 0 {
+		return nil, fmt.Errorf("no stream chunks")
+	}
+
+	body, meta, err := ra.inAdapter.AggregateStreamChunks(context.WithoutCancel(ctx), chunks)
+	if err != nil {
+		return nil, fmt.Errorf("aggregate error: %w", err)
+	}
+
+	if meta.Usage != nil {
+		ra.metrics.RecordUsage(meta.Usage)
+	}
+
+	return &httpclient.Response{
+		StatusCode: http.StatusOK,
+		Headers: http.Header{
+			"Content-Type": []string{"application/json"},
+		},
+		Body: body,
+	}, nil
 }
 
 // parsedRequestInbound 让 pipeline 复用 relay 在选路前已经解析好的 llm.Request。

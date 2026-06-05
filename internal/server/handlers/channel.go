@@ -270,10 +270,12 @@ func testChannel(c *gin.Context) {
 		testModel = "gpt-3.5-turbo"
 	}
 
+	stream := false
 	llmReq := &llm.Request{
 		Model:       testModel,
-		MaxTokens:   int64Ptr(1024),
+		MaxTokens:   int64Ptr(4096),
 		Temperature: float64Ptr(0.7),
+		Stream:      &stream,
 		Messages: []llm.Message{
 			{
 				Role: "user",
@@ -374,6 +376,10 @@ func testChannel(c *gin.Context) {
 		} else if msg.ReasoningContent != nil && *msg.ReasoningContent != "" {
 			result.Content = *msg.ReasoningContent
 		}
+	}
+	// 即使没有文本内容，只要请求成功且有 token 用量，就视为连通成功
+	if result.Content == "" && result.TokensOut > 0 {
+		result.Content = "(模型响应成功，无文本内容)"
 	}
 
 	resp.Success(c, result)

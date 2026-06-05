@@ -494,6 +494,9 @@ func (ra *relayAttempt) writeStream(ctx context.Context, clientStream streams.St
 				continue
 			}
 			// 这里只临时保存 pipeline 已经转换好的客户端格式事件，正常结束后聚合成最终响应体用于日志；不会把分片逐条落库。
+			if len(responseEvents) < 3 {
+				log.Infof("stream event[%d] type=%s data_preview=%s", len(responseEvents), r.event.Type, string(r.event.Data[:min(len(r.event.Data), 300)]))
+			}
 			responseEvents = append(responseEvents, r.event)
 			if firstToken {
 				ra.metrics.FirstTokenTime = time.Now()

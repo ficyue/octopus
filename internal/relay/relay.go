@@ -304,7 +304,8 @@ func (ra *relayAttempt) forward() (int, error) {
 	if result.Response != nil && len(result.Response.Body) > 0 {
 		respPreview = string(result.Response.Body[:min(len(result.Response.Body), 500)])
 	}
-	log.Infof("pipeline result: stream=%t, response=%v, body_len=%d, preview=%s",
+	log.Infof("client stream=%v, pipeline result: stream=%t, response=%v, body_len=%d, preview=%s",
+		ra.internalRequest.Stream,
 		result.Stream, result.Response != nil,
 		func() int { if result.Response != nil { return len(result.Response.Body) }; return 0 }(),
 		respPreview)

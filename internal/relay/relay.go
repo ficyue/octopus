@@ -463,6 +463,10 @@ func (ra *relayAttempt) writeStream(ctx context.Context, clientStream streams.St
 		case r, ok := <-results:
 			if !ok {
 				log.Infof("stream end, events collected: %d", len(responseEvents))
+				// OpenAI 兼容协议要求流末尾发送 [DONE] 标记
+				ra.c.Writer.Write([]byte("data: [DONE]\n\n"))
+
+				ra.c.Writer.Flush()
 				if len(responseEvents) == 0 {
 					return nil
 				}

@@ -272,7 +272,7 @@ func testChannel(c *gin.Context) {
 
 	llmReq := &llm.Request{
 		Model:       testModel,
-		MaxTokens:   int64Ptr(128),
+		MaxTokens:   int64Ptr(1024),
 		Temperature: float64Ptr(0.7),
 		Messages: []llm.Message{
 			{
@@ -368,8 +368,11 @@ func testChannel(c *gin.Context) {
 	}
 
 	if len(llmResp.Choices) > 0 && llmResp.Choices[0].Message != nil {
-		if llmResp.Choices[0].Message.Content.Content != nil {
-			result.Content = *llmResp.Choices[0].Message.Content.Content
+		msg := llmResp.Choices[0].Message
+		if msg.Content.Content != nil && *msg.Content.Content != "" {
+			result.Content = *msg.Content.Content
+		} else if msg.ReasoningContent != nil && *msg.ReasoningContent != "" {
+			result.Content = *msg.ReasoningContent
 		}
 	}
 

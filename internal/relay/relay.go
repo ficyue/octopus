@@ -300,6 +300,9 @@ func (ra *relayAttempt) forward() (int, error) {
 	if result == nil {
 		return 0, fmt.Errorf("empty pipeline result")
 	}
+	log.Infof("pipeline result: stream=%t, response=%v, body_len=%d",
+		result.Stream, result.Response != nil,
+		func() int { if result.Response != nil { return len(result.Response.Body) }; return 0 }())
 	if result.Stream {
 		if err := ra.writeStream(ctx, result.EventStream); err != nil {
 			return http.StatusOK, err

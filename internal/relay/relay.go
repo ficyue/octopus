@@ -462,7 +462,7 @@ func (ra *relayAttempt) writeStream(ctx context.Context, clientStream streams.St
 			return fmt.Errorf("first token timeout (%ds)", firstTokenTimeoutSec)
 		case r, ok := <-results:
 			if !ok {
-				log.Infof("stream end")
+				log.Infof("stream end, events collected: %d", len(responseEvents))
 				if len(responseEvents) == 0 {
 					return nil
 				}
@@ -550,8 +550,10 @@ func (m *relayPipelineMiddleware) OnOutboundRawError(ctx context.Context, err er
 
 func (m *relayPipelineMiddleware) OnOutboundRawStream(ctx context.Context, stream streams.Stream[*httpclient.StreamEvent]) (streams.Stream[*httpclient.StreamEvent], error) {
 	if stream == nil {
+		log.Warnf("OnOutboundRawStream: stream is nil")
 		return stream, nil
 	}
+	log.Infof("OnOutboundRawStream: stream received")
 	// 包装原始流，在每个事件中查找 input_tokens_details.cached_tokens
 	return streams.Map(stream, func(event *httpclient.StreamEvent) *httpclient.StreamEvent {
 		if event == nil || len(event.Data) == 0 {

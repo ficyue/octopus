@@ -300,9 +300,14 @@ func (ra *relayAttempt) forward() (int, error) {
 	if result == nil {
 		return 0, fmt.Errorf("empty pipeline result")
 	}
-	log.Infof("pipeline result: stream=%t, response=%v, body_len=%d",
+	respPreview := ""
+	if result.Response != nil && len(result.Response.Body) > 0 {
+		respPreview = string(result.Response.Body[:min(len(result.Response.Body), 500)])
+	}
+	log.Infof("pipeline result: stream=%t, response=%v, body_len=%d, preview=%s",
 		result.Stream, result.Response != nil,
-		func() int { if result.Response != nil { return len(result.Response.Body) }; return 0 }())
+		func() int { if result.Response != nil { return len(result.Response.Body) }; return 0 }(),
+		respPreview)
 	if result.Stream {
 		// 客户端未请求流式但 pipeline 返回了流（上游自动升级），需要聚合成完整响应。
 		if ra.internalRequest.Stream == nil || !*ra.internalRequest.Stream {
@@ -570,6 +575,9 @@ func (m *relayPipelineMiddleware) OnOutboundRawStream(ctx context.Context, strea
 
 func (m *relayPipelineMiddleware) OnOutboundRawResponse(ctx context.Context, response *httpclient.Response) (*httpclient.Response, error) {
 	if response != nil && len(response.Body) > 0 {
+		log.Infof("OnOutboundRawResponse: status=%d, body_len=%d, preview=%s",
+			response.StatusCode, len(response.Body),
+			string(response.Body[:min(len(response.Body), 500)]))
 		// 部分上游返回 input_tokens_details 而非标准的 prompt_tokens_details，
 		// axonhub/llm 只解析后者，这里从原始 JSON 中提取缓存信息备用。
 		var raw struct {
@@ -630,6 +638,8 @@ func (ra *relayAttempt) autoAggregateStream(ctx context.Context, clientStream st
 	if len(chunks) == 0 {
 		return nil, fmt.Errorf("no stream chunks")
 	}
+	log.Infof("autoAggregateStream: chunks=%d, first_chunk_preview=%s",
+		len(chunks), func() string { if len(chunks) > 0 && len(chunks[0].Data) > 0 { return string(chunks[0].Data[:min(len(chunks[0].Data), 300)]) }; return "" }())
 
 	body, meta, err := ra.inAdapter.AggregateStreamChunks(context.WithoutCancel(ctx), chunks)
 	if err != nil {

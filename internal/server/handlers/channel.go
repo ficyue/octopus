@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/bestruirui/octopus/internal/helper"
+	"github.com/bestruirui/octopus/internal/utils/log"
 	"github.com/bestruirui/octopus/internal/model"
 	"github.com/bestruirui/octopus/internal/op"
 	"github.com/bestruirui/octopus/internal/server/middleware"
@@ -357,6 +358,10 @@ func testChannel(c *gin.Context) {
 		})
 		return
 	}
+
+	log.Infof("testChannel: model=%s, choices=%d, usage=%+v, resp_preview=%s",
+		llmResp.Model, len(llmResp.Choices), llmResp.Usage,
+		string(respBody[:min(len(respBody), 500)]))
 
 	result := ChannelTestResponse{
 		Success:   true,

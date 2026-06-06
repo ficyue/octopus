@@ -505,7 +505,7 @@ func StatsChannelPeriod(ctx context.Context, period string) ([]model.StatsChanne
 
 	var rows []Row
 	err := dbConn.Model(&model.RelayLog{}).
-		Select("channel_id, channel_name, count(*) as req_count, sum(input_tokens) as input_tokens, sum(output_tokens) as output_tokens, sum(use_time) as total_ms, sum(cost) as total_cost").
+		Select("channel_id, channel_name, count(*) as req_count, sum(prompt_tokens) as input_tokens, sum(completion_tokens) as output_tokens, sum(use_time) as total_ms, sum(total_cost) as total_cost").
 		Where("time >= ? AND channel_id > 0", since.Unix()).
 		Group("channel_id, channel_name").
 		Find(&rows).Error

@@ -129,6 +129,8 @@ github.com/looplj/axonhub/llm v0.0.0-20260603132446-b6826c1016fa h1:671sMQkrqIm1
 github.com/looplj/axonhub/llm v0.0.0-20260603132446-b6826c1016fa/go.mod h1:T/tXhTAamQYi1+31G+x/jsfeAmelS/Qa1GKFtzOAY78=
 github.com/looplj/axonhub/llm v0.0.0-20260604153619-ad096f571027 h1:cyAE/COqTT05qMW8JFKqAztaaV0AcNV8ad03uAUg3uQ=
 github.com/looplj/axonhub/llm v0.0.0-20260604153619-ad096f571027/go.mod h1:TGUEaqChpmhJjwD29KZCw53jvCI1Wanes0nsPNvuzlk=
+github.com/looplj/axonhub/llm v0.0.0-20260612005843-fcfc8ea99b1a h1:FzphcTaex61vfD0M7liqV4j8CAHnER4FL5TsG4+QQvI=
+github.com/looplj/axonhub/llm v0.0.0-20260612005843-fcfc8ea99b1a/go.mod h1:TGUEaqChpmhJjwD29KZCw53jvCI1Wanes0nsPNvuzlk=
 github.com/looplj/go-sse v0.0.0-20250909130008-e74a1155bc3b h1:E0c0wVuenqlLPK0pwZbIFGNBjcRl/ZTRqmkRzq0mfVE=
 github.com/looplj/go-sse v0.0.0-20250909130008-e74a1155bc3b/go.mod h1:u/2kZQR1tyngo1lKaNCj1mJmhXGZWS1Zs5yiSOD+Eg8=
 github.com/mattn/go-isatty v0.0.20 h1:xfD0iDuEKnDkl03q4limB+vH+GxLEtL/jb4xVJSWWEY=

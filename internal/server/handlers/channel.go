@@ -274,7 +274,7 @@ func testChannel(c *gin.Context) {
 	stream := false
 	llmReq := &llm.Request{
 		Model:       testModel,
-		MaxTokens:   int64Ptr(8192),
+		MaxTokens:   int64Ptr(16384),
 		Temperature: float64Ptr(0.7),
 		Stream:      &stream,
 		Messages: []llm.Message{

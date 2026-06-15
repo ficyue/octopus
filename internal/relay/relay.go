@@ -45,6 +45,13 @@ func newRelayRun(c *gin.Context, inboundType llm.APIFormat, inAdapter transforme
 		return nil, err
 	}
 
+	// Anthropic 入站请求如果客户端未指定输出 token 上限，给一个更大的默认值，
+	// 避免 thinking 模型在 8192 上限内被思考过程占满，导致正文截断或空响应。
+	if inboundType == llm.APIFormatAnthropicMessage && internalRequest.MaxTokens == nil && internalRequest.MaxCompletionTokens == nil {
+		defaultMaxTokens := int64(64000)
+		internalRequest.MaxTokens = &defaultMaxTokens
+	}
+
 	if supportedModels := c.GetString("supported_models"); supportedModels != "" {
 		if !slices.Contains(strings.Split(supportedModels, ","), internalRequest.Model) {
 			err := errors.New("model not supported")
@@ -69,6 +76,7 @@ func newRelayRun(c *gin.Context, inboundType llm.APIFormat, inAdapter transforme
 
 	return &relayRun{
 		c:               c,
+		inboundType:     inboundType,
 		inAdapter:       inAdapter,
 		internalRequest: internalRequest,
 		metrics: &RelayMetrics{
@@ -322,6 +330,7 @@ func (ra *relayAttempt) forward() (int, error) {
 			if err != nil {
 				return http.StatusOK, err
 			}
+			response.Body = patchResponseForToolCalls(response.Body, ra.inboundType)
 			ra.metrics.InternalResponse = response.Body
 			ra.c.Data(http.StatusOK, "application/json", response.Body)
 			return http.StatusOK, nil
@@ -334,6 +343,7 @@ func (ra *relayAttempt) forward() (int, error) {
 	if result.Response == nil {
 		return 0, fmt.Errorf("empty pipeline response")
 	}
+	result.Response.Body = patchResponseForToolCalls(result.Response.Body, ra.inboundType)
 	ra.metrics.InternalResponse = result.Response.Body
 	statusCode := result.Response.StatusCode
 	if statusCode == 0 {
@@ -398,6 +408,7 @@ func (ra *relayAttempt) writeStream(ctx context.Context, clientStream streams.St
 	ra.c.Header("X-Accel-Buffering", "no")
 
 	firstToken := true
+	sawToolUse := false
 	responseEvents := make([]*httpclient.StreamEvent, 0, 8)
 	type sseReadResult struct {
 		event *httpclient.StreamEvent
@@ -509,6 +520,7 @@ func (ra *relayAttempt) writeStream(ctx context.Context, clientStream streams.St
 			if r.event == nil || len(r.event.Data) == 0 {
 				continue
 			}
+			r.event.Data, sawToolUse = patchStreamEventForToolCalls(r.event.Data, ra.inboundType, sawToolUse)
 			// 这里只临时保存 pipeline 已经转换好的客户端格式事件，正常结束后聚合成最终响应体用于日志；不会把分片逐条落库。
 			if len(responseEvents) < 3 {
 				log.Infof("stream event[%d] type=%s data_preview=%s", len(responseEvents), r.event.Type, string(r.event.Data[:min(len(r.event.Data), 300)]))
@@ -782,6 +794,119 @@ func (ra *relayAttempt) autoAggregateStream(ctx context.Context, clientStream st
 	}, nil
 }
 
+
+func patchResponseForToolCalls(body []byte, inboundType llm.APIFormat) []byte {
+	switch inboundType {
+	case llm.APIFormatAnthropicMessage:
+		var m map[string]any
+		if json.Unmarshal(body, &m) != nil {
+			return body
+		}
+		if sr, ok := m["stop_reason"].(string); ok && sr == "end_turn" {
+			if containsAnthropicToolUse(m) {
+				m["stop_reason"] = "tool_use"
+				if out, err := json.Marshal(m); err == nil {
+					return out
+				}
+			}
+		}
+		return body
+	default:
+		var m map[string]any
+		if json.Unmarshal(body, &m) != nil {
+			return body
+		}
+		if choices, ok := m["choices"].([]any); ok && len(choices) > 0 {
+			if ch, ok := choices[0].(map[string]any); ok {
+				if openAIHasToolCalls(ch) {
+					if fr, ok := ch["finish_reason"].(string); ok && fr == "stop" {
+						ch["finish_reason"] = "tool_calls"
+						if out, err := json.Marshal(m); err == nil {
+							return out
+						}
+					}
+				}
+			}
+		}
+		return body
+	}
+}
+
+func containsAnthropicToolUse(resp map[string]any) bool {
+	if content, ok := resp["content"].([]any); ok {
+		for _, block := range content {
+			if b, ok := block.(map[string]any); ok {
+				if t, ok := b["type"].(string); ok {
+					if strings.HasSuffix(t, "_tool_use") || t == "tool_use" {
+						return true
+					}
+				}
+			}
+		}
+	}
+	return false
+}
+
+func openAIHasToolCalls(choice map[string]any) bool {
+	if msg, ok := choice["message"].(map[string]any); ok {
+		if tc, ok := msg["tool_calls"].([]any); ok && len(tc) > 0 {
+			return true
+		}
+	}
+	if delta, ok := choice["delta"].(map[string]any); ok {
+		if tc, ok := delta["tool_calls"].([]any); ok && len(tc) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func patchStreamEventForToolCalls(data []byte, inboundType llm.APIFormat, sawToolUse bool) ([]byte, bool) {
+	switch inboundType {
+	case llm.APIFormatAnthropicMessage:
+		var m map[string]any
+		if json.Unmarshal(data, &m) != nil {
+			return data, sawToolUse
+		}
+		if typ, ok := m["type"].(string); ok && typ == "content_block_start" {
+			if cb, ok := m["content_block"].(map[string]any); ok {
+				if t, ok := cb["type"].(string); ok {
+					if strings.HasSuffix(t, "_tool_use") || t == "tool_use" {
+						sawToolUse = true
+					}
+				}
+			}
+		}
+		if delta, ok := m["delta"].(map[string]any); ok {
+			if sr, ok := delta["stop_reason"].(string); ok && sr == "end_turn" && sawToolUse {
+				delta["stop_reason"] = "tool_use"
+				if out, err := json.Marshal(m); err == nil {
+					return out, sawToolUse
+				}
+			}
+		}
+		return data, sawToolUse
+	default:
+		var m map[string]any
+		if json.Unmarshal(data, &m) != nil {
+			return data, sawToolUse
+		}
+		if choices, ok := m["choices"].([]any); ok && len(choices) > 0 {
+			if ch, ok := choices[0].(map[string]any); ok {
+				if openAIHasToolCalls(ch) {
+					sawToolUse = true
+				}
+				if fr, ok := ch["finish_reason"].(string); ok && fr == "stop" && sawToolUse {
+					ch["finish_reason"] = "tool_calls"
+					if out, err := json.Marshal(m); err == nil {
+						return out, sawToolUse
+					}
+				}
+			}
+		}
+		return data, sawToolUse
+	}
+}
 // parsedRequestInbound 让 pipeline 复用 relay 在选路前已经解析好的 llm.Request。
 // 这样每次候选通道尝试只重新执行 outbound transform 和 HTTP 请求，不会重复读取或解析客户端 body。
 type parsedRequestInbound struct {

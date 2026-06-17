@@ -511,46 +511,6 @@ func (ra *relayAttempt) writeStream(ctx context.Context, clientStream streams.St
 		case r, ok := <-results:
 			if !ok {
 				log.Infof("stream end, events collected: %d", len(responseEvents))
-				// 打印最后几个事件和 stop_reason，方便排查流式无回答问题
-				if len(responseEvents) > 0 {
-					// 打印最后5个非空事件的类型
-					eventTypes := make([]string, 0)
-					for _, ev := range responseEvents {
-						if ev != nil && len(ev.Data) > 0 {
-							eventTypes = append(eventTypes, extractEventType(ev.Data))
-						}
-					}
-					log.Infof("stream event types summary: %s", strings.Join(eventTypes, ", "))
-					// 在 message_delta 事件中找 stop_reason
-					for i := len(responseEvents) - 1; i >= 0; i-- {
-						ev := responseEvents[i]
-						if ev != nil && extractEventType(ev.Data) == "message_delta" {
-							log.Infof("stream message_delta: %s", string(ev.Data[:min(len(ev.Data), 300)]))
-							break
-						}
-					}
-					// 检查是否有 text 类型的 content_block
-					hasThinking := false
-					hasText := false
-					for _, ev := range responseEvents {
-						if ev != nil {
-							t := extractEventType(ev.Data)
-							if t == "content_block_start" && bytes.Contains(ev.Data, []byte(`"type":"text"`)) {
-								hasText = true
-							}
-							if t == "content_block_start" && bytes.Contains(ev.Data, []byte(`"type":"thinking"`)) {
-								hasThinking = true
-							}
-						}
-					}
-					log.Infof("stream content blocks: has_thinking=%v, has_text=%v, inbound_type=%s", hasThinking, hasText, ra.inboundType)
-					last := responseEvents[len(responseEvents)-1]
-					lastPreview := ""
-					if last != nil && len(last.Data) > 0 {
-						lastPreview = string(last.Data[:min(len(last.Data), 200)])
-					}
-					log.Infof("stream last event: type=%s data_preview=%s", last.Type, lastPreview)
-				}
 				// OpenAI 兼容协议要求流末尾发送 [DONE] 标记
 				// 仅 OpenAI Chat Completions 格式需要 [DONE] 标记，Anthropic/Responses 格式不需要
 				if ra.inboundType == llm.APIFormatOpenAIChatCompletion {

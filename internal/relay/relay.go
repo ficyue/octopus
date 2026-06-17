@@ -368,11 +368,10 @@ func (ra *relayAttempt) forward() (int, error) {
 	ra.c.Data(statusCode, contentType, result.Response.Body)
 	// 兜底：pipeline 可能没有触发 OnOutboundLlmResponse（某些上游格式解析失败），用原始响应兜底。
 	if ra.metrics.usage == nil {
+		log.Warnf("no usage extracted for non-stream response: body_len=%d, status=%d", len(result.Response.Body), statusCode)
 		if ra.usageOverride != nil {
 			ra.metrics.RecordUsage(ra.usageOverride)
 		}
-	} else {
-		log.Warnf("no usage extracted for non-stream response: body_len=%d, status=%d", len(result.Response.Body), statusCode)
 	}
 	return statusCode, nil
 }
@@ -669,6 +668,23 @@ func (m *relayPipelineMiddleware) OnOutboundRawStream(ctx context.Context, strea
 				CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
 				CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
 			} `json:"usage"`
+			Message *struct {
+				Usage *struct {
+					PromptTokens        int64 `json:"prompt_tokens"`
+					CompletionTokens    int64 `json:"completion_tokens"`
+					TotalTokens         int64 `json:"total_tokens"`
+					InputTokens         int64 `json:"input_tokens"`
+					OutputTokens        int64 `json:"output_tokens"`
+					PromptTokensDetails *struct {
+						CachedTokens int64 `json:"cached_tokens"`
+					} `json:"prompt_tokens_details"`
+					InputTokensDetails *struct {
+						CachedTokens int64 `json:"cached_tokens"`
+					} `json:"input_tokens_details"`
+					CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
+					CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
+				} `json:"usage"`
+			} `json:"message"`
 			Response *struct {
 				Usage *struct {
 					PromptTokens        int64 `json:"prompt_tokens"`
@@ -690,8 +706,11 @@ func (m *relayPipelineMiddleware) OnOutboundRawStream(ctx context.Context, strea
 		if json.Unmarshal(event.Data, &raw) != nil {
 			return event
 		}
-		// Responses API 把 usage 放在 response.usage 里
+		// 优先使用顶层 usage，其次 message.usage（Anthropic message_start），最后 response.usage（Responses API）
 		u := raw.Usage
+		if u == nil && raw.Message != nil && raw.Message.Usage != nil {
+			u = raw.Message.Usage
+		}
 		if u == nil && raw.Response != nil && raw.Response.Usage != nil {
 			u = raw.Response.Usage
 		}
@@ -992,8 +1011,11 @@ func patchStreamEventForToolCalls(data []byte, inboundType llm.APIFormat, sawToo
 }
 
 // extractUsageFromJSON tries to extract usage info from any JSON body.
-// Supports both OpenAI format (usage.prompt_tokens/completion_tokens) and
-// Anthropic format (usage.input_tokens/output_tokens).
+// Supports:
+//   - OpenAI Chat: top-level usage.prompt_tokens/completion_tokens
+//   - Anthropic: top-level usage.input_tokens/output_tokens (message_delta events)
+//   - Anthropic nested: message.usage.input_tokens/output_tokens (message_start events)
+//   - Responses API: response.usage.input_tokens/output_tokens
 func extractUsageFromJSON(data []byte) *llm.Usage {
 	var raw struct {
 		Usage *struct {
@@ -1012,11 +1034,57 @@ func extractUsageFromJSON(data []byte) *llm.Usage {
 			CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
 			CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
 		} `json:"usage"`
+		Message *struct {
+			Usage *struct {
+				PromptTokens        int64 `json:"prompt_tokens"`
+				CompletionTokens    int64 `json:"completion_tokens"`
+				TotalTokens         int64 `json:"total_tokens"`
+				InputTokens         int64 `json:"input_tokens"`
+				OutputTokens        int64 `json:"output_tokens"`
+				PromptTokensDetails *struct {
+					CachedTokens      int64 `json:"cached_tokens"`
+					WriteCachedTokens int64 `json:"write_cached_tokens"`
+				} `json:"prompt_tokens_details"`
+				InputTokensDetails *struct {
+					CachedTokens int64 `json:"cached_tokens"`
+				} `json:"input_tokens_details"`
+				CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
+				CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
+			} `json:"usage"`
+		} `json:"message"`
+		Response *struct {
+			Usage *struct {
+				PromptTokens        int64 `json:"prompt_tokens"`
+				CompletionTokens    int64 `json:"completion_tokens"`
+				TotalTokens         int64 `json:"total_tokens"`
+				InputTokens         int64 `json:"input_tokens"`
+				OutputTokens        int64 `json:"output_tokens"`
+				PromptTokensDetails *struct {
+					CachedTokens      int64 `json:"cached_tokens"`
+					WriteCachedTokens int64 `json:"write_cached_tokens"`
+				} `json:"prompt_tokens_details"`
+				InputTokensDetails *struct {
+					CachedTokens int64 `json:"cached_tokens"`
+				} `json:"input_tokens_details"`
+				CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
+				CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
+			} `json:"usage"`
+		} `json:"response"`
 	}
-	if json.Unmarshal(data, &raw) != nil || raw.Usage == nil {
+	if json.Unmarshal(data, &raw) != nil {
 		return nil
 	}
+	// 优先使用顶层 usage，其次 message.usage（Anthropic message_start），最后 response.usage（Responses API）
 	u := raw.Usage
+	if u == nil && raw.Message != nil && raw.Message.Usage != nil {
+		u = raw.Message.Usage
+	}
+	if u == nil && raw.Response != nil && raw.Response.Usage != nil {
+		u = raw.Response.Usage
+	}
+	if u == nil {
+		return nil
+	}
 	inputTokens := u.PromptTokens
 	if inputTokens == 0 {
 		inputTokens = u.InputTokens

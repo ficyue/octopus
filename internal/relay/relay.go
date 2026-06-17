@@ -504,14 +504,13 @@ func (ra *relayAttempt) writeStream(ctx context.Context, clientStream streams.St
 				}
 			}
 			return nil
-			return nil
 		case <-firstTokenC:
 			log.Warnf("first token timeout (%ds), switching channel", firstTokenTimeoutSec)
 			_ = clientStream.Close()
 			return fmt.Errorf("first token timeout (%ds)", firstTokenTimeoutSec)
 		case r, ok := <-results:
 			if !ok {
-				log.Infof("stream end, events collected: %d", len(responseEvents))
+				log.Debugf("stream end, events collected: %d", len(responseEvents))
 				// OpenAI 兼容协议要求流末尾发送 [DONE] 标记
 				ra.c.Writer.Write([]byte("data: [DONE]\n\n"))
 
@@ -566,6 +565,7 @@ func (ra *relayAttempt) writeStream(ctx context.Context, clientStream streams.St
 					log.Warnf("no usage extracted for stream response: events=%d, response_len=%d", len(responseEvents), len(responseBody))
 				}
 			} // end if !ok
+				return nil
 			if r.err != nil {
 				log.Warnf("failed to read event: %v", r.err)
 				return fmt.Errorf("failed to read stream event: %w", r.err)

@@ -564,8 +564,8 @@ func (ra *relayAttempt) writeStream(ctx context.Context, clientStream streams.St
 				if usage == nil {
 					log.Warnf("no usage extracted for stream response: events=%d, response_len=%d", len(responseEvents), len(responseBody))
 				}
-			} // end if !ok
 				return nil
+			} // end if !ok
 			if r.err != nil {
 				log.Warnf("failed to read event: %v", r.err)
 				return fmt.Errorf("failed to read stream event: %w", r.err)

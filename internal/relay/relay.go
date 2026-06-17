@@ -510,7 +510,16 @@ func (ra *relayAttempt) writeStream(ctx context.Context, clientStream streams.St
 			return fmt.Errorf("first token timeout (%ds)", firstTokenTimeoutSec)
 		case r, ok := <-results:
 			if !ok {
-				log.Debugf("stream end, events collected: %d", len(responseEvents))
+				log.Infof("stream end, events collected: %d", len(responseEvents))
+				// 打印最后几个事件和 stop_reason，方便排查流式无回答问题
+				if len(responseEvents) > 0 {
+					last := responseEvents[len(responseEvents)-1]
+					lastPreview := ""
+					if last != nil && len(last.Data) > 0 {
+						lastPreview = string(last.Data[:min(len(last.Data), 200)])
+					}
+					log.Infof("stream last event: type=%s data_preview=%s", last.Type, lastPreview)
+				}
 				// OpenAI 兼容协议要求流末尾发送 [DONE] 标记
 				ra.c.Writer.Write([]byte("data: [DONE]\n\n"))
 

@@ -421,6 +421,7 @@ func (ra *relayAttempt) writeStream(ctx context.Context, clientStream streams.St
 
 	firstToken := true
 	sawToolUse := false
+	openContentBlocks := make(map[int]bool) // track open content blocks by index
 	responseEvents := make([]*httpclient.StreamEvent, 0, 8)
 	type sseReadResult struct {
 		event *httpclient.StreamEvent
@@ -574,6 +575,28 @@ func (ra *relayAttempt) writeStream(ctx context.Context, clientStream streams.St
 				continue
 			}
 			r.event.Data, sawToolUse = patchStreamEventForToolCalls(r.event.Data, ra.inboundType, sawToolUse)
+			// 过滤异常的 content_block_stop：如果没有对应的 content_block_start 就跳过
+			// 部分上游（商汤等）会发送多余的 content_block_stop 导致客户端断开
+			eventType := extractEventType(r.event.Data)
+			if eventType == "content_block_start" {
+				var idx struct {
+					Index int `json:"index"`
+				}
+				if json.Unmarshal(r.event.Data, &idx) == nil {
+					openContentBlocks[idx.Index] = true
+				}
+			} else if eventType == "content_block_stop" {
+				var idx struct {
+					Index int `json:"index"`
+				}
+				if json.Unmarshal(r.event.Data, &idx) == nil {
+					if !openContentBlocks[idx.Index] {
+						log.Infof("filtering orphan content_block_stop: index=%d (no matching content_block_start)", idx.Index)
+						continue
+					}
+					delete(openContentBlocks, idx.Index)
+				}
+			}
 			// 这里只临时保存 pipeline 已经转换好的客户端格式事件，正常结束后聚合成最终响应体用于日志；不会把分片逐条落库。
 			if len(responseEvents) < 3 {
 				log.Infof("stream event[%d] type=%s data_preview=%s", len(responseEvents), r.event.Type, string(r.event.Data[:min(len(r.event.Data), 300)]))
@@ -1008,6 +1031,17 @@ func patchStreamEventForToolCalls(data []byte, inboundType llm.APIFormat, sawToo
 		}
 		return data, sawToolUse
 	}
+}
+
+// extractEventType extracts the "type" field from a JSON event payload.
+func extractEventType(data []byte) string {
+	var t struct {
+		Type string `json:"type"`
+	}
+	if json.Unmarshal(data, &t) == nil {
+		return t.Type
+	}
+	return ""
 }
 
 // extractUsageFromJSON tries to extract usage info from any JSON body.

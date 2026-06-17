@@ -480,6 +480,30 @@ func (ra *relayAttempt) writeStream(ctx context.Context, clientStream streams.St
 		case <-ctx.Done():
 			log.Infof("client disconnected, stopping stream")
 			_ = clientStream.Close()
+			// 客户端断开时仍尝试从已收集的事件中提取 usage
+			if ra.metrics.usage == nil {
+				if ra.usageOverride != nil {
+					ra.metrics.RecordUsage(ra.usageOverride)
+				} else {
+					for i := len(responseEvents) - 1; i >= 0; i-- {
+						if len(responseEvents[i].Data) > 0 {
+							if u := extractUsageFromJSON(responseEvents[i].Data); u != nil {
+								ra.metrics.RecordUsage(u)
+								break
+							}
+						}
+					}
+				}
+			}
+			if len(responseEvents) > 0 && len(ra.metrics.InternalResponse) == 0 {
+				for i := len(responseEvents) - 1; i >= 0; i-- {
+					if len(responseEvents[i].Data) > 0 && !bytes.HasPrefix(responseEvents[i].Data, []byte("[DONE]")) {
+						ra.metrics.InternalResponse = responseEvents[i].Data
+						break
+					}
+				}
+			}
+			return nil
 			return nil
 		case <-firstTokenC:
 			log.Warnf("first token timeout (%ds), switching channel", firstTokenTimeoutSec)
@@ -642,11 +666,36 @@ func (m *relayPipelineMiddleware) OnOutboundRawStream(ctx context.Context, strea
 				InputTokensDetails *struct {
 					CachedTokens int64 `json:"cached_tokens"`
 				} `json:"input_tokens_details"`
-				CacheReadInputTokens int64 `json:"cache_read_input_tokens"`
+				CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
+				CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
 			} `json:"usage"`
+			Response *struct {
+				Usage *struct {
+					PromptTokens        int64 `json:"prompt_tokens"`
+					CompletionTokens    int64 `json:"completion_tokens"`
+					TotalTokens         int64 `json:"total_tokens"`
+					InputTokens         int64 `json:"input_tokens"`
+					OutputTokens        int64 `json:"output_tokens"`
+					PromptTokensDetails *struct {
+						CachedTokens int64 `json:"cached_tokens"`
+					} `json:"prompt_tokens_details"`
+					InputTokensDetails *struct {
+						CachedTokens int64 `json:"cached_tokens"`
+					} `json:"input_tokens_details"`
+					CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
+					CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
+				} `json:"usage"`
+			} `json:"response"`
 		}
-		if json.Unmarshal(event.Data, &raw) == nil && raw.Usage != nil {
-			u := raw.Usage
+		if json.Unmarshal(event.Data, &raw) != nil {
+			return event
+		}
+		// Responses API 把 usage 放在 response.usage 里
+		u := raw.Usage
+		if u == nil && raw.Response != nil && raw.Response.Usage != nil {
+			u = raw.Response.Usage
+		}
+		if u != nil {
 			// 提取缓存 token
 			cached := int64(0)
 			if u.PromptTokensDetails != nil {
@@ -684,7 +733,7 @@ func (m *relayPipelineMiddleware) OnOutboundRawStream(ctx context.Context, strea
 					m.attempt.usageOverride.PromptTokensDetails = &llm.PromptTokensDetails{CachedTokens: cached}
 				}
 			}
-		}
+		} // end if u != nil
 		return event
 	}), nil
 }

@@ -140,7 +140,7 @@ func (r *relayRun) run() {
 	} else {
 		errMsg := "all channels failed"
 		if lastErr != nil {
-		errMsg = lastErr.Error()
+			errMsg = lastErr.Error()
 		}
 		resp.Error(r.c, http.StatusBadGateway, errMsg)
 	}
@@ -320,7 +320,12 @@ func (ra *relayAttempt) forward() (int, error) {
 	log.Infof("client stream=%s, pipeline result: stream=%t, response=%v, body_len=%d, preview=%s",
 		clientStreamVal,
 		result.Stream, result.Response != nil,
-		func() int { if result.Response != nil { return len(result.Response.Body) }; return 0 }(),
+		func() int {
+			if result.Response != nil {
+				return len(result.Response.Body)
+			}
+			return 0
+		}(),
 		respPreview)
 	if result.Stream {
 		// 客户端未请求流式但 pipeline 返回了流（上游自动升级），需要聚合成完整响应。
@@ -361,6 +366,14 @@ func (ra *relayAttempt) forward() (int, error) {
 		}
 	}
 	ra.c.Data(statusCode, contentType, result.Response.Body)
+	// 兜底：pipeline 可能没有触发 OnOutboundLlmResponse（某些上游格式解析失败），用原始响应兜底。
+	if ra.metrics.usage == nil {
+		if ra.usageOverride != nil {
+			ra.metrics.RecordUsage(ra.usageOverride)
+		}
+	} else {
+		log.Warnf("no usage extracted for non-stream response: body_len=%d, status=%d", len(result.Response.Body), statusCode)
+	}
 	return statusCode, nil
 }
 
@@ -480,6 +493,10 @@ func (ra *relayAttempt) writeStream(ctx context.Context, clientStream streams.St
 
 				ra.c.Writer.Flush()
 				if len(responseEvents) == 0 {
+					// 流式无事件时用兜底 usage
+					if ra.usageOverride != nil {
+						ra.metrics.RecordUsage(ra.usageOverride)
+					}
 					return nil
 				}
 				// 客户端请求流式时，pipeline 只负责边转边写，不会自动生成完整响应体。
@@ -491,16 +508,27 @@ func (ra *relayAttempt) writeStream(ctx context.Context, clientStream streams.St
 					for i := len(responseEvents) - 1; i >= 0; i-- {
 						if len(responseEvents[i].Data) > 0 && !bytes.HasPrefix(responseEvents[i].Data, []byte("[DONE]")) {
 							ra.metrics.InternalResponse = responseEvents[i].Data
+							// 聚合失败时也尝试从事件数据提取 usage
+							if u := extractUsageFromJSON(responseEvents[i].Data); u != nil {
+								ra.metrics.RecordUsage(u)
+							}
 							break
 						}
+					}
+					if ra.metrics.usage == nil && ra.usageOverride != nil {
+						ra.metrics.RecordUsage(ra.usageOverride)
 					}
 					return nil
 				}
 				ra.metrics.InternalResponse = responseBody
 				// 流式场景下，如果标准解析未拿到 usage，用原始流事件中提取的兜底。
 				usage := meta.Usage
-				if usage == nil && ra.usageOverride != nil {
+				if usage == nil {
 					usage = ra.usageOverride
+				}
+				// 最后兜底：从聚合后的响应体中直接提取 usage
+				if usage == nil && len(responseBody) > 0 {
+					usage = extractUsageFromJSON(responseBody)
 				}
 				if ra.cachedTokensOverride > 0 && usage != nil &&
 					(usage.PromptTokensDetails == nil || usage.PromptTokensDetails.CachedTokens == 0) {
@@ -510,8 +538,10 @@ func (ra *relayAttempt) writeStream(ctx context.Context, clientStream streams.St
 					usage.PromptTokensDetails.CachedTokens = ra.cachedTokensOverride
 				}
 				ra.metrics.RecordUsage(usage)
-				return nil
-			}
+				if usage == nil {
+					log.Warnf("no usage extracted for stream response: events=%d, response_len=%d", len(responseEvents), len(responseBody))
+				}
+			} // end if !ok
 			if r.err != nil {
 				log.Warnf("failed to read event: %v", r.err)
 				return fmt.Errorf("failed to read stream event: %w", r.err)
@@ -601,18 +631,18 @@ func (m *relayPipelineMiddleware) OnOutboundRawStream(ctx context.Context, strea
 		}
 		var raw struct {
 			Usage *struct {
-				PromptTokens     int64 `json:"prompt_tokens"`
-				CompletionTokens int64 `json:"completion_tokens"`
-				TotalTokens      int64 `json:"total_tokens"`
-				InputTokens      int64 `json:"input_tokens"`
-				OutputTokens     int64 `json:"output_tokens"`
+				PromptTokens        int64 `json:"prompt_tokens"`
+				CompletionTokens    int64 `json:"completion_tokens"`
+				TotalTokens         int64 `json:"total_tokens"`
+				InputTokens         int64 `json:"input_tokens"`
+				OutputTokens        int64 `json:"output_tokens"`
 				PromptTokensDetails *struct {
 					CachedTokens int64 `json:"cached_tokens"`
 				} `json:"prompt_tokens_details"`
 				InputTokensDetails *struct {
 					CachedTokens int64 `json:"cached_tokens"`
 				} `json:"input_tokens_details"`
-				CacheReadInputTokens  int64 `json:"cache_read_input_tokens"`
+				CacheReadInputTokens int64 `json:"cache_read_input_tokens"`
 			} `json:"usage"`
 		}
 		if json.Unmarshal(event.Data, &raw) == nil && raw.Usage != nil {
@@ -669,18 +699,18 @@ func (m *relayPipelineMiddleware) OnOutboundRawResponse(ctx context.Context, res
 		// 或者 llm 库解析失败时，这里直接从原始 body 中提取。
 		var raw struct {
 			Usage *struct {
-				PromptTokens     int64 `json:"prompt_tokens"`
-				CompletionTokens int64 `json:"completion_tokens"`
-				TotalTokens      int64 `json:"total_tokens"`
-				InputTokens      int64 `json:"input_tokens"`
-				OutputTokens     int64 `json:"output_tokens"`
+				PromptTokens        int64 `json:"prompt_tokens"`
+				CompletionTokens    int64 `json:"completion_tokens"`
+				TotalTokens         int64 `json:"total_tokens"`
+				InputTokens         int64 `json:"input_tokens"`
+				OutputTokens        int64 `json:"output_tokens"`
 				PromptTokensDetails *struct {
 					CachedTokens int64 `json:"cached_tokens"`
 				} `json:"prompt_tokens_details"`
 				InputTokensDetails *struct {
 					CachedTokens int64 `json:"cached_tokens"`
 				} `json:"input_tokens_details"`
-				CacheReadInputTokens  int64 `json:"cache_read_input_tokens"`
+				CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
 				CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
 			} `json:"usage"`
 		}
@@ -770,7 +800,12 @@ func (ra *relayAttempt) autoAggregateStream(ctx context.Context, clientStream st
 		return nil, fmt.Errorf("no stream chunks")
 	}
 	log.Infof("autoAggregateStream: chunks=%d, first_chunk_preview=%s",
-		len(chunks), func() string { if len(chunks) > 0 && len(chunks[0].Data) > 0 { return string(chunks[0].Data[:min(len(chunks[0].Data), 300)]) }; return "" }())
+		len(chunks), func() string {
+			if len(chunks) > 0 && len(chunks[0].Data) > 0 {
+				return string(chunks[0].Data[:min(len(chunks[0].Data), 300)])
+			}
+			return ""
+		}())
 
 	body, meta, err := ra.inAdapter.AggregateStreamChunks(context.WithoutCancel(ctx), chunks)
 	if err != nil {
@@ -793,7 +828,6 @@ func (ra *relayAttempt) autoAggregateStream(ctx context.Context, clientStream st
 		Body: body,
 	}, nil
 }
-
 
 func patchResponseForToolCalls(body []byte, inboundType llm.APIFormat) []byte {
 	switch inboundType {
@@ -907,6 +941,74 @@ func patchStreamEventForToolCalls(data []byte, inboundType llm.APIFormat, sawToo
 		return data, sawToolUse
 	}
 }
+
+// extractUsageFromJSON tries to extract usage info from any JSON body.
+// Supports both OpenAI format (usage.prompt_tokens/completion_tokens) and
+// Anthropic format (usage.input_tokens/output_tokens).
+func extractUsageFromJSON(data []byte) *llm.Usage {
+	var raw struct {
+		Usage *struct {
+			PromptTokens        int64 `json:"prompt_tokens"`
+			CompletionTokens    int64 `json:"completion_tokens"`
+			TotalTokens         int64 `json:"total_tokens"`
+			InputTokens         int64 `json:"input_tokens"`
+			OutputTokens        int64 `json:"output_tokens"`
+			PromptTokensDetails *struct {
+				CachedTokens      int64 `json:"cached_tokens"`
+				WriteCachedTokens int64 `json:"write_cached_tokens"`
+			} `json:"prompt_tokens_details"`
+			InputTokensDetails *struct {
+				CachedTokens int64 `json:"cached_tokens"`
+			} `json:"input_tokens_details"`
+			CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
+			CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
+		} `json:"usage"`
+	}
+	if json.Unmarshal(data, &raw) != nil || raw.Usage == nil {
+		return nil
+	}
+	u := raw.Usage
+	inputTokens := u.PromptTokens
+	if inputTokens == 0 {
+		inputTokens = u.InputTokens
+	}
+	outputTokens := u.CompletionTokens
+	if outputTokens == 0 {
+		outputTokens = u.OutputTokens
+	}
+	if inputTokens == 0 && outputTokens == 0 {
+		return nil
+	}
+	totalTokens := u.TotalTokens
+	if totalTokens == 0 {
+		totalTokens = inputTokens + outputTokens
+	}
+	cached := int64(0)
+	writeCached := int64(0)
+	if u.PromptTokensDetails != nil {
+		cached = u.PromptTokensDetails.CachedTokens
+		writeCached = u.PromptTokensDetails.WriteCachedTokens
+	}
+	if cached == 0 && u.InputTokensDetails != nil {
+		cached = u.InputTokensDetails.CachedTokens
+	}
+	if cached == 0 {
+		cached = u.CacheReadInputTokens
+	}
+	usage := &llm.Usage{
+		PromptTokens:     inputTokens,
+		CompletionTokens: outputTokens,
+		TotalTokens:      totalTokens,
+	}
+	if cached > 0 || writeCached > 0 {
+		usage.PromptTokensDetails = &llm.PromptTokensDetails{
+			CachedTokens:      cached,
+			WriteCachedTokens: writeCached,
+		}
+	}
+	return usage
+}
+
 // parsedRequestInbound 让 pipeline 复用 relay 在选路前已经解析好的 llm.Request。
 // 这样每次候选通道尝试只重新执行 outbound transform 和 HTTP 请求，不会重复读取或解析客户端 body。
 type parsedRequestInbound struct {

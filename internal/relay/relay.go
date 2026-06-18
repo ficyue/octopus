@@ -524,7 +524,7 @@ func (ra *relayAttempt) writeStream(ctx context.Context, clientStream streams.St
 						needFinish := false
 						if json.Unmarshal(lastEvent.Data, &check) == nil && len(check.Choices) > 0 {
 							fr := check.Choices[0].FinishReason
-							log.Infof("stream end check: finish_reason=%v, delta_has_content=%v", fr, len(check.Choices[0].Delta) > 0)
+							log.Infof("stream end check: finish_reason=%v (nil=%v), delta_has_content=%v", fr, fr == nil, len(check.Choices[0].Delta) > 0)
 							if fr == nil {
 								needFinish = true
 							}

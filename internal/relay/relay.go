@@ -577,6 +577,10 @@ func (ra *relayAttempt) writeStream(ctx context.Context, clientStream streams.St
 			if r.event == nil || len(r.event.Data) == 0 {
 				continue
 			}
+			// 跳过上游发来的 [DONE] 标记，避免重复写入和误算事件数
+			if bytes.Equal(r.event.Data, []byte("[DONE]")) {
+				continue
+			}
 			r.event.Data, sawToolUse = patchStreamEventForToolCalls(r.event.Data, ra.inboundType, sawToolUse)
 			// 过滤异常的 content_block_stop：如果没有对应的 content_block_start 就跳过
 			// 部分上游（商汤等）会发送多余的 content_block_stop 导致客户端断开

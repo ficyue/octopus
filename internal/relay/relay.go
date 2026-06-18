@@ -518,11 +518,14 @@ func (ra *relayAttempt) writeStream(ctx context.Context, clientStream streams.St
 						var check struct {
 							Choices []struct {
 								FinishReason *string `json:"finish_reason"`
+								Delta        json.RawMessage `json:"delta"`
 							} `json:"choices"`
 						}
 						needFinish := false
 						if json.Unmarshal(lastEvent.Data, &check) == nil && len(check.Choices) > 0 {
-							if check.Choices[0].FinishReason == nil {
+							fr := check.Choices[0].FinishReason
+							log.Infof("stream end check: finish_reason=%v, delta_has_content=%v", fr, len(check.Choices[0].Delta) > 0)
+							if fr == nil {
 								needFinish = true
 							}
 						} else {

@@ -511,9 +511,29 @@ func (ra *relayAttempt) writeStream(ctx context.Context, clientStream streams.St
 		case r, ok := <-results:
 			if !ok {
 				log.Infof("stream end, events collected: %d", len(responseEvents))
-				// OpenAI 兼容协议要求流末尾发送 [DONE] 标记
-				// 仅 OpenAI Chat Completions 格式需要 [DONE] 标记，Anthropic/Responses 格式不需要
-				if ra.inboundType == llm.APIFormatOpenAIChatCompletion {
+				// 补发 finish_reason 终止 chunk：部分上游只发一个大 chunk 不带 finish_reason，客户端会一直等
+				if ra.inboundType == llm.APIFormatOpenAIChatCompletion && len(responseEvents) > 0 {
+					lastEvent := responseEvents[len(responseEvents)-1]
+					if lastEvent != nil && len(lastEvent.Data) > 0 {
+						var check struct {
+							Choices []struct {
+								FinishReason *string `json:"finish_reason"`
+							} `json:"choices"`
+						}
+						needFinish := false
+						if json.Unmarshal(lastEvent.Data, &check) == nil && len(check.Choices) > 0 {
+							if check.Choices[0].FinishReason == nil {
+								needFinish = true
+							}
+						} else {
+							needFinish = true
+						}
+						if needFinish {
+							log.Infof("stream: last event missing finish_reason, sending stop chunk")
+							ra.c.Writer.Write([]byte("data: " + fmt.Sprintf(`{"choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"object":"chat.completion.chunk"}`) + "\n\n"))
+						}
+					}
+					// OpenAI 兼容协议要求流末尾发送 [DONE] 标记
 					ra.c.Writer.Write([]byte("data: [DONE]\n\n"))
 				}
 

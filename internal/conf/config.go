@@ -16,6 +16,7 @@ type Server struct {
 
 type Log struct {
 	Level string `mapstructure:"level"`
+	Path  string `mapstructure:"path"`
 }
 
 type Database struct {
@@ -74,4 +75,5 @@ func setDefaults() {
 	viper.SetDefault("database.type", "sqlite")
 	viper.SetDefault("database.path", "data/data.db")
 	viper.SetDefault("log.level", "info")
+	viper.SetDefault("log.path", "data/octopus.log")
 }

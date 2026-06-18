@@ -188,7 +188,15 @@ func relayLogCleanup(ctx context.Context) error {
 	}
 
 	cutoffTime := time.Now().Add(-time.Duration(keepPeriod) * 24 * time.Hour).Unix()
-	return db.GetDB().WithContext(ctx).Where("time < ?", cutoffTime).Delete(&model.RelayLog{}).Error
+	result := db.GetDB().WithContext(ctx).Where("time < ?", cutoffTime).Delete(&model.RelayLog{})
+	if result.Error != nil {
+		return result.Error
+	}
+	// 清理后回收磁盘空间
+	if result.RowsAffected > 0 {
+		db.GetDB().Exec("VACUUM")
+	}
+	return nil
 }
 
 // RelayLogList 查询日志列表，支持可选的时间范围过滤
@@ -262,5 +270,10 @@ func RelayLogClear(ctx context.Context) error {
 	relayLogCacheLock.Lock()
 	relayLogCache = make([]model.RelayLog, 0, relayLogMaxSize)
 	relayLogCacheLock.Unlock()
-	return db.GetDB().WithContext(ctx).Where("1 = 1").Delete(&model.RelayLog{}).Error
+	err := db.GetDB().WithContext(ctx).Where("1 = 1").Delete(&model.RelayLog{}).Error
+	if err != nil {
+		return err
+	}
+	// 清空后回收磁盘空间
+	return db.GetDB().WithContext(ctx).Exec("VACUUM").Error
 }

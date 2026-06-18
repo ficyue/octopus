@@ -34,6 +34,37 @@ func init() {
 	Logger = zap.New(core, opts...).Sugar()
 }
 
+// EnableFileOutput adds a file writer alongside stdout.
+func EnableFileOutput(path string) error {
+	if path == "" {
+		return nil
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	// 同时输出到 stdout 和文件
+	core := zapcore.NewTee(
+		zapcore.NewCore(
+			zapcore.NewConsoleEncoder(consoleEncoder),
+			zapcore.AddSync(os.Stdout),
+			atomicLevel,
+		),
+		zapcore.NewCore(
+			zapcore.NewConsoleEncoder(consoleEncoder),
+			zapcore.AddSync(f),
+			atomicLevel,
+		),
+	)
+	opts := []zap.Option{
+		zap.AddCaller(),
+		zap.AddCallerSkip(1),
+		zap.AddStacktrace(zap.ErrorLevel),
+	}
+	Logger = zap.New(core, opts...).Sugar()
+	return nil
+}
+
 func SetLevel(level string) {
 	var lvl zapcore.Level
 	err := lvl.UnmarshalText([]byte(level))

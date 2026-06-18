@@ -20,6 +20,13 @@ var startCmd = &cobra.Command{
 		conf.PrintBanner()
 		conf.Load(cfgFile)
 		log.SetLevel(conf.AppConfig.Log.Level)
+		if conf.AppConfig.Log.Path != "" {
+			if err := log.EnableFileOutput(conf.AppConfig.Log.Path); err != nil {
+				log.Errorf("failed to enable file log: %v", err)
+			} else {
+				log.Infof("log file: %s", conf.AppConfig.Log.Path)
+			}
+		}
 	},
 	Run: func(cmd *cobra.Command, args []string) {
 		shutdown.Init(log.Logger)

@@ -478,7 +478,28 @@ func (ra *relayAttempt) writeStream(ctx context.Context, clientStream streams.St
 	for {
 		select {
 		case <-ctx.Done():
-			log.Infof("client disconnected, stopping stream")
+			log.Infof("client disconnected, draining upstream for usage")
+			// 客户端断开后不立即关闭上游流，继续读取直到拿到 usage 或流结束
+			// 上游通常在最后一个事件（response.completed / message_delta）返回真实 usage
+			drainCtx, drainCancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer drainCancel()
+			for clientStream.Next() {
+				ev := clientStream.Current()
+				if ev != nil && len(ev.Data) > 0 {
+					responseEvents = append(responseEvents, ev)
+					// 尝试提取 usage
+					if u := extractUsageFromJSON(ev.Data); u != nil && (u.PromptTokens > 0 || u.CompletionTokens > 0) {
+						ra.metrics.RecordUsage(u)
+						break
+					}
+				}
+				select {
+				case <-drainCtx.Done():
+					goto drainDone
+				default:
+				}
+			}
+		drainDone:
 			_ = clientStream.Close()
 			// 客户端断开时仍尝试从已收集的事件中提取 usage
 			if ra.metrics.usage == nil {

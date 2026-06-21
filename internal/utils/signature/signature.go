@@ -72,16 +72,13 @@ func GuessProvider(raw string) GuessResult {
 }
 
 // IsSafeForProvider checks whether a signature blob is safe to forward to the given provider.
-// Returns true if the blob is likely from that provider or from an unknown provider.
-// Returns false if the blob is clearly from a different provider.
+// Returns true only if the blob is recognized as the target provider.
+// Returns false for signatures from other providers or unknown formats.
 func IsSafeForProvider(raw string, target Provider) bool {
 	if raw == "" {
-		return true
+		return false
 	}
 	result := GuessProvider(raw)
-	if result.Provider == ProviderUnknown {
-		return true // unknown origin, allow forwarding
-	}
 	return result.Provider == target
 }
 

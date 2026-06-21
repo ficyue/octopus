@@ -39,21 +39,22 @@ func (m *RelayMetrics) RecordUsage(usage *llm.Usage) {
 	if usage == nil {
 		return
 	}
-
 	// usage 已由 axonhub/llm 标准化；octopus 仍使用本地模型价格表计算成本，所以这里只做用量落点和价格换算。
 	m.usage = usage
 	m.Stats.InputToken = usage.PromptTokens
 	m.Stats.OutputToken = usage.CompletionTokens
 
-	modelPrice := price.GetLLMPrice(m.ActualModel)
-	if modelPrice == nil {
-		return
-	}
+	// 缓存 token 统计不依赖价格表，提前设置
 	tokenDetails := usage.PromptTokensDetails
 	if tokenDetails == nil {
 		tokenDetails = &llm.PromptTokensDetails{}
 	}
 	m.Stats.CachedTokens = tokenDetails.CachedTokens
+
+	modelPrice := price.GetLLMPrice(m.ActualModel)
+	if modelPrice == nil {
+		return
+	}
 	// 缓存读、缓存写和普通输入的单价不同；如果上游返回的缓存明细超过总输入 token，就退回按全部输入 token 计费，避免出现负成本。
 	nonCachedTokens := usage.PromptTokens - tokenDetails.CachedTokens - tokenDetails.WriteCachedTokens
 	if nonCachedTokens < 0 {

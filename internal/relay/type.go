@@ -5,6 +5,8 @@ import (
 	"github.com/bestruirui/octopus/internal/relay/balancer"
 	"github.com/gin-gonic/gin"
 	"github.com/looplj/axonhub/llm"
+	"github.com/looplj/axonhub/llm/httpclient"
+	"github.com/looplj/axonhub/llm/streams"
 	"github.com/looplj/axonhub/llm/transformer"
 )
 
@@ -28,6 +30,7 @@ type relayAttempt struct {
 	usedKey              dbmodel.ChannelKey
 	cachedTokensOverride int64       // 从原始响应 input_tokens_details 中提取的缓存 token 数
 	usageOverride        *llm.Usage  // 从原始响应中提取的 usage 兜底，当 llm 库解析不到时使用
+	rawUpstreamStream    streams.Stream[*httpclient.StreamEvent] // 原始上游流引用，客户端断开时用于 drain
 }
 
 // hopByHopHeaders 定义不应转发的 HTTP 头

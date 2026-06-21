@@ -285,6 +285,9 @@ func parseRequest(c *gin.Context, inboundType llm.APIFormat, inAdapter transform
 // forward 转发请求到上游服务
 func (ra *relayAttempt) forward() (int, error) {
 	ctx := ra.c.Request.Context()
+	// 为上游请求创建独立 context，客户端断开后仍可 drain 上游流获取 usage
+	upstreamCtx, upstreamCancel := context.WithCancel(context.Background())
+	defer upstreamCancel()
 	if ra.internalRequest.RawRequest == nil {
 		return 0, fmt.Errorf("missing raw request")
 	}
@@ -302,7 +305,7 @@ func (ra *relayAttempt) forward() (int, error) {
 			ra.outAdapter,
 			pipeline.WithMiddlewares(stream.EnsureUsage(), relayMiddleware),
 		).
-		Process(ctx, ra.internalRequest.RawRequest)
+		Process(upstreamCtx, ra.internalRequest.RawRequest)
 	if err != nil {
 		return relayMiddleware.upstreamStatusCode, err
 	}
@@ -443,13 +446,13 @@ func (ra *relayAttempt) writeStream(ctx context.Context, clientStream streams.St
 				}
 			}
 		}()
-		// Next 可能阻塞等待上游 token；放到协程里让首 token 超时和客户端断开都能及时打断本次通道尝试。
+		// Next 可能阻塞等待上游 token；放到协程里让首 token 超时能及时打断本次通道尝试。
+		// 注意：不检查 ctx.Done()（请求 context），因为客户端断开后需要继续 drain 上游流获取 usage。
+		// 上游请求用的是 upstreamCtx（独立 context），不受客户端断开影响。
 		for clientStream.Next() {
 			select {
 			case results <- sseReadResult{event: clientStream.Current()}:
 			case <-done:
-				return
-			case <-ctx.Done():
 				return
 			}
 		}
@@ -457,7 +460,6 @@ func (ra *relayAttempt) writeStream(ctx context.Context, clientStream streams.St
 			select {
 			case results <- sseReadResult{err: err}:
 			case <-done:
-			case <-ctx.Done():
 			}
 		}
 	}()
@@ -479,27 +481,32 @@ func (ra *relayAttempt) writeStream(ctx context.Context, clientStream streams.St
 		select {
 		case <-ctx.Done():
 			log.Infof("client disconnected, draining upstream for usage")
-			// 客户端断开后不立即关闭上游流，继续读取直到拿到 usage 或流结束
-			// 上游通常在最后一个事件（response.completed / message_delta）返回真实 usage
+			// 客户端断开后继续从 results channel 读取上游事件，直到拿到 usage 或超时
 			drainCtx, drainCancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer drainCancel()
-			for clientStream.Next() {
-				ev := clientStream.Current()
-				if ev != nil && len(ev.Data) > 0 {
-					responseEvents = append(responseEvents, ev)
-					// 尝试提取 usage
-					if u := extractUsageFromJSON(ev.Data); u != nil && (u.PromptTokens > 0 || u.CompletionTokens > 0) {
-						ra.metrics.RecordUsage(u)
-						break
-					}
-				}
+			drainCount := 0
+		drainLoop:
+			for {
 				select {
+				case r, ok := <-results:
+					if !ok {
+						break drainLoop
+					}
+					if r.err != nil {
+						break drainLoop
+					}
+					if r.event != nil && len(r.event.Data) > 0 {
+						drainCount++
+						if u := extractUsageFromJSON(r.event.Data); u != nil && (u.PromptTokens > 0 || u.CompletionTokens > 0) {
+							ra.metrics.RecordUsage(u)
+							break drainLoop
+						}
+					}
 				case <-drainCtx.Done():
-					goto drainDone
-				default:
+					break drainLoop
 				}
 			}
-		drainDone:
+			_ = clientStream.Close()
 			_ = clientStream.Close()
 			// 客户端断开时仍尝试从已收集的事件中提取 usage
 			if ra.metrics.usage == nil {
@@ -649,9 +656,7 @@ func (ra *relayAttempt) writeStream(ctx context.Context, clientStream streams.St
 				}
 			}
 			// 这里只临时保存 pipeline 已经转换好的客户端格式事件，正常结束后聚合成最终响应体用于日志；不会把分片逐条落库。
-			if len(responseEvents) == 0 && len(r.event.Data) > 0 {
-				log.Infof("stream first event full: %s", string(r.event.Data[:min(len(r.event.Data), 800)]))
-			} else if len(responseEvents) < 3 {
+			if len(responseEvents) < 3 {
 				log.Infof("stream event[%d] type=%s data_preview=%s", len(responseEvents), r.event.Type, string(r.event.Data[:min(len(r.event.Data), 300)]))
 			}
 			responseEvents = append(responseEvents, r.event)
@@ -723,11 +728,14 @@ func (m *relayPipelineMiddleware) OnOutboundRawStream(ctx context.Context, strea
 		return stream, nil
 	}
 	log.Infof("OnOutboundRawStream: stream received")
+	// 保存原始上游流引用，客户端断开时用于 drain 读取剩余事件
+	m.attempt.rawUpstreamStream = stream
 	// 包装原始流，在每个事件中查找 usage 信息
 	return streams.Map(stream, func(event *httpclient.StreamEvent) *httpclient.StreamEvent {
 		if event == nil || len(event.Data) == 0 {
 			return event
 		}
+
 		var raw struct {
 			Usage *struct {
 				PromptTokens        int64 `json:"prompt_tokens"`
@@ -809,6 +817,8 @@ func (m *relayPipelineMiddleware) OnOutboundRawStream(ctx context.Context, strea
 			inputTokens := u.PromptTokens
 			if inputTokens == 0 {
 				inputTokens = u.InputTokens
+				// Anthropic 格式: input_tokens 不含缓存，需要加上 cache_read + cache_creation
+				inputTokens += u.CacheReadInputTokens + u.CacheCreationInputTokens
 			}
 			outputTokens := u.CompletionTokens
 			if outputTokens == 0 {
@@ -863,6 +873,8 @@ func (m *relayPipelineMiddleware) OnOutboundRawResponse(ctx context.Context, res
 			inputTokens := u.PromptTokens
 			if inputTokens == 0 {
 				inputTokens = u.InputTokens
+			// Anthropic 格式: input_tokens 不含缓存，需要加上 cache_read + cache_creation
+			inputTokens += u.CacheReadInputTokens + u.CacheCreationInputTokens
 			}
 			outputTokens := u.CompletionTokens
 			if outputTokens == 0 {
@@ -1175,6 +1187,8 @@ func extractUsageFromJSON(data []byte) *llm.Usage {
 	inputTokens := u.PromptTokens
 	if inputTokens == 0 {
 		inputTokens = u.InputTokens
+		// Anthropic 格式: input_tokens 不含缓存，需要加上 cache_read + cache_creation
+		inputTokens += u.CacheReadInputTokens + u.CacheCreationInputTokens
 	}
 	outputTokens := u.CompletionTokens
 	if outputTokens == 0 {

@@ -425,6 +425,7 @@ func (ra *relayAttempt) writeStream(ctx context.Context, clientStream streams.St
 	firstToken := true
 	sawToolUse := false
 	openContentBlocks := make(map[int]bool) // track open content blocks by index
+		openToolUseBlocks := make(map[int]bool) // track tool_use blocks that are still open
 	responseEvents := make([]*httpclient.StreamEvent, 0, 8)
 	type sseReadResult struct {
 		event *httpclient.StreamEvent
@@ -539,6 +540,28 @@ func (ra *relayAttempt) writeStream(ctx context.Context, clientStream streams.St
 		case r, ok := <-results:
 			if !ok {
 				log.Infof("stream end, events collected: %d", len(responseEvents))
+				// 修复：部分上游（商汤）的 tool_calls 第一个 chunk arguments="" 导致 pipeline
+				// 的 Read 工具缓冲逻辑没有 flush input_json_delta 和 content_block_stop。
+				// 检测到未关闭的 tool_use block 时，补发 content_block_stop。
+				if len(openToolUseBlocks) > 0 && ra.inboundType == llm.APIFormatAnthropicMessage {
+					for idx := range openToolUseBlocks {
+						log.Infof("fixing unclosed tool_use block: index=%d, sending content_block_stop", idx)
+						stopData, _ := json.Marshal(map[string]any{
+							"type":  "content_block_stop",
+							"index": idx,
+						})
+						if ra.c.Writer != nil {
+							ra.c.Writer.Write([]byte("event: content_block_stop\n"))
+							ra.c.Writer.Write([]byte("data: "))
+							ra.c.Writer.Write(stopData)
+							ra.c.Writer.Write([]byte("\n\n"))
+						}
+						fixEvent := &httpclient.StreamEvent{Type: "content_block_stop", Data: stopData}
+						responseEvents = append(responseEvents, fixEvent)
+						delete(openToolUseBlocks, idx)
+					}
+					ra.c.Writer.Flush()
+				}
 				// 补发 finish_reason 终止 chunk：部分上游只发一个大 chunk 不带 finish_reason，客户端会一直等
 				if ra.inboundType == llm.APIFormatOpenAIChatCompletion && len(responseEvents) > 0 {
 					lastEvent := responseEvents[len(responseEvents)-1]
@@ -638,10 +661,16 @@ func (ra *relayAttempt) writeStream(ctx context.Context, clientStream streams.St
 			eventType := extractEventType(r.event.Data)
 			if eventType == "content_block_start" {
 				var idx struct {
-					Index int `json:"index"`
+					Index        int    `json:"index"`
+					ContentBlock struct {
+						Type string `json:"type"`
+					} `json:"content_block"`
 				}
 				if json.Unmarshal(r.event.Data, &idx) == nil {
 					openContentBlocks[idx.Index] = true
+					if idx.ContentBlock.Type == "tool_use" {
+						openToolUseBlocks[idx.Index] = true
+					}
 				}
 			} else if eventType == "content_block_stop" {
 				var idx struct {
@@ -653,6 +682,7 @@ func (ra *relayAttempt) writeStream(ctx context.Context, clientStream streams.St
 						continue
 					}
 					delete(openContentBlocks, idx.Index)
+					delete(openToolUseBlocks, idx.Index)
 				}
 			}
 			// 这里只临时保存 pipeline 已经转换好的客户端格式事件，正常结束后聚合成最终响应体用于日志；不会把分片逐条落库。

@@ -577,6 +577,12 @@
       "autoGroupRegex": "正規比對",
       "matchRegex": "匹配正規",
       "matchRegexPlaceholder": "可選：用於匹配請求模型名稱的正規表示式",
+      "keyMode": "Key 運行模式",
+      "keyModeDefault": "預設",
+      "keyModeRoundRobin": "輪詢",
+      "keyModeRandom": "隨機",
+      "keyModeFailover": "故障轉移",
+      "keyModeWeighted": "加權",
       "remark": "備註",
       "passthrough": "透傳模式（不做協議轉換）"
     }

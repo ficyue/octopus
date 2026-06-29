@@ -1,4 +1,4 @@
-import { AutoGroupType, ChannelType, type Channel, useFetchModel } from '@/api/endpoints/channel';
+import { AutoGroupType, ChannelType, KeyMode, type Channel, useFetchModel } from '@/api/endpoints/channel';
 import {
     Select,
     SelectContent,
@@ -43,6 +43,7 @@ export interface ChannelFormData {
     auto_sync: boolean;
     auto_group: AutoGroupType;
     match_regex: string;
+    key_mode: KeyMode;
 }
 
 export interface ChannelFormProps {
@@ -321,16 +322,33 @@ export function ChannelForm({
                     <label className="text-sm font-medium text-card-foreground">
                         {t('apiKey')} {formData.keys.length > 0 ? `(${formData.keys.length})` : ''}
                     </label>
-                    <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={handleAddKey}
-                        className="h-6 px-2 text-xs text-muted-foreground/70 hover:text-muted-foreground hover:bg-transparent"
-                    >
-                        <Plus className="h-3 w-3 mr-1" />
-                        {t('add')}
-                    </Button>
+                    <div className="flex items-center gap-2">
+                        <Select
+                            value={String(formData.key_mode ?? KeyMode.Default)}
+                            onValueChange={(v) => onFormDataChange({ ...formData, key_mode: Number(v) as KeyMode })}
+                        >
+                            <SelectTrigger className="w-28 h-7 text-xs rounded-lg">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value={String(KeyMode.Default)}>{t('keyModeDefault')}</SelectItem>
+                                <SelectItem value={String(KeyMode.RoundRobin)}>{t('keyModeRoundRobin')}</SelectItem>
+                                <SelectItem value={String(KeyMode.Random)}>{t('keyModeRandom')}</SelectItem>
+                                <SelectItem value={String(KeyMode.Failover)}>{t('keyModeFailover')}</SelectItem>
+                                <SelectItem value={String(KeyMode.Weighted)}>{t('keyModeWeighted')}</SelectItem>
+                            </SelectContent>
+                        </Select>
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={handleAddKey}
+                            className="h-6 px-2 text-xs text-muted-foreground/70 hover:text-muted-foreground hover:bg-transparent"
+                        >
+                            <Plus className="h-3 w-3 mr-1" />
+                            {t('add')}
+                        </Button>
+                    </div>
                 </div>
                 <DragDropContext onDragEnd={handleReorderKeys}>
                     <Droppable droppableId="keys">

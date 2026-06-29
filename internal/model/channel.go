@@ -1,11 +1,18 @@
 package model
 
 import (
+	"math/rand"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/bestruirui/octopus/internal/transformer/outbound"
 )
+
+
+// 全局轮询计数器（按渠道 ID 记录）
+var roundRobinCounters = make(map[int]int)
+var roundRobinMutex sync.Mutex
 
 type AutoGroupType int
 
@@ -14,6 +21,16 @@ const (
 	AutoGroupTypeFuzzy AutoGroupType = 1 //模糊匹配
 	AutoGroupTypeExact AutoGroupType = 2 //准确匹配
 	AutoGroupTypeRegex AutoGroupType = 3 //正则匹配
+)
+
+type KeyMode int
+
+const (
+	KeyModeDefault    KeyMode = 0 // 默认(按分组配置)
+	KeyModeRoundRobin KeyMode = 1 // 轮询
+	KeyModeRandom     KeyMode = 2 // 随机
+	KeyModeFailover   KeyMode = 3 // 故障转移
+	KeyModeWeighted   KeyMode = 4 // 加权
 )
 
 type Channel struct {
@@ -34,6 +51,7 @@ type Channel struct {
 	ChannelProxy  *string               `json:"channel_proxy"`
 	Stats         *StatsChannel         `json:"stats,omitempty" gorm:"foreignKey:ChannelID"`
 	MatchRegex    *string               `json:"match_regex"`
+	KeyMode       KeyMode               `json:"key_mode" gorm:"default:0"`
 }
 
 type BaseUrl struct {
@@ -136,9 +154,8 @@ func (c *Channel) GetChannelKey() ChannelKey {
 	return keys[0]
 }
 
-// GetAvailableKeys returns all available keys sorted by priority (ascending),
-// then by total cost (ascending) as tiebreaker. Skips disabled, empty, and
-// recently-429 keys.
+// GetAvailableKeys returns all available keys based on channel's KeyMode.
+// Modes: 0=Default(priority+cost), 1=RoundRobin, 2=Random, 3=Failover(priority), 4=Weighted
 func (c *Channel) GetAvailableKeys() []ChannelKey {
 	if c == nil || len(c.Keys) == 0 {
 		return nil
@@ -146,6 +163,7 @@ func (c *Channel) GetAvailableKeys() []ChannelKey {
 
 	nowSec := time.Now().Unix()
 
+	// Step 1: Filter available keys
 	var available []ChannelKey
 	for _, k := range c.Keys {
 		if !k.Enabled || k.ChannelKey == "" {
@@ -159,12 +177,90 @@ func (c *Channel) GetAvailableKeys() []ChannelKey {
 		available = append(available, k)
 	}
 
-	sort.Slice(available, func(i, j int) bool {
-		if available[i].Priority != available[j].Priority {
-			return available[i].Priority < available[j].Priority
+	if len(available) == 0 {
+		return nil
+	}
+
+	// Step 2: Sort/arrange based on KeyMode
+	switch c.KeyMode {
+	case KeyModeRoundRobin:
+		// 轮询：按顺序循环
+		roundRobinMutex.Lock()
+		counter := roundRobinCounters[c.ID]
+		roundRobinCounters[c.ID] = counter + 1
+		roundRobinMutex.Unlock()
+		
+		// 按 ID 排序确保稳定顺序
+		sort.Slice(available, func(i, j int) bool {
+			return available[i].ID < available[j].ID
+		})
+		
+		// 旋转切片，从当前位置开始
+		if len(available) > 0 {
+			idx := counter % len(available)
+			available = append(available[idx:], available[:idx]...)
 		}
-		return available[i].TotalCost < available[j].TotalCost
-	})
+		
+	case KeyModeRandom:
+		// 随机：打乱顺序
+		rand.Shuffle(len(available), func(i, j int) {
+			available[i], available[j] = available[j], available[i]
+		})
+		
+	case KeyModeFailover:
+		// 故障转移：按优先级排序（priority 越小越优先）
+		sort.Slice(available, func(i, j int) bool {
+			if available[i].Priority != available[j].Priority {
+				return available[i].Priority < available[j].Priority
+			}
+			return available[i].TotalCost < available[j].TotalCost
+		})
+		
+	case KeyModeWeighted:
+		// 加权：按权重分配（weight 存储在 priority 字段，priority=0 表示默认权重 1）
+		// 计算总权重
+		totalWeight := 0
+		for _, k := range available {
+			w := k.Priority
+			if w <= 0 {
+				w = 1
+			}
+			totalWeight += w
+		}
+		
+		if totalWeight > 0 {
+			// 加权随机选择
+			r := rand.Intn(totalWeight)
+			cumulative := 0
+			selectedIdx := 0
+			for i, k := range available {
+				w := k.Priority
+				if w <= 0 {
+					w = 1
+				}
+				cumulative += w
+				if r < cumulative {
+					selectedIdx = i
+					break
+				}
+			}
+			// 将选中的 key 放到第一位
+			if selectedIdx > 0 {
+				selected := available[selectedIdx]
+				available = append(available[:selectedIdx], available[selectedIdx+1:]...)
+				available = append([]ChannelKey{selected}, available...)
+			}
+		}
+		
+	default:
+		// 默认：按 priority + cost 排序（原有逻辑）
+		sort.Slice(available, func(i, j int) bool {
+			if available[i].Priority != available[j].Priority {
+				return available[i].Priority < available[j].Priority
+			}
+			return available[i].TotalCost < available[j].TotalCost
+		})
+	}
 
 	return available
 }

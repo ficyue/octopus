@@ -577,6 +577,12 @@
       "autoGroupRegex": "Regex",
       "matchRegex": "Match Regex",
       "matchRegexPlaceholder": "Optional: regex pattern to match request model names",
+      "keyMode": "Key Mode",
+      "keyModeDefault": "Default",
+      "keyModeRoundRobin": "Round Robin",
+      "keyModeRandom": "Random",
+      "keyModeFailover": "Failover",
+      "keyModeWeighted": "Weighted",
       "remark": "Remark",
       "passthrough": "Passthrough Mode (no protocol transform)"
     }

@@ -5,7 +5,7 @@ import {
     MorphingDialogDescription,
     useMorphingDialog,
 } from '@/components/ui/morphing-dialog';
-import { useCreateChannel, ChannelType, AutoGroupType } from '@/api/endpoints/channel';
+import { useCreateChannel, ChannelType, AutoGroupType, KeyMode } from '@/api/endpoints/channel';
 import { useTranslations } from 'next-intl';
 import { ChannelForm, type ChannelFormData } from './Form';
 
@@ -28,6 +28,7 @@ export function CreateDialogContent() {
         proxy: false,
         passthrough: false,
         match_regex: '',
+        key_mode: KeyMode.Default,
     });
     const t = useTranslations('channel.create');
 
@@ -82,6 +83,7 @@ export function CreateDialogContent() {
                         proxy: false,
                         passthrough: false,
                         match_regex: '',
+                        key_mode: KeyMode.Default,
                     });
                     setIsOpen(false);
                 }

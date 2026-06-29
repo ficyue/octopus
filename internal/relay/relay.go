@@ -9,6 +9,7 @@ import (
 	"maps"
 	"net/http"
 	"slices"
+	"sort"
 	"strings"
 	"time"
 
@@ -540,28 +541,18 @@ func (ra *relayAttempt) writeStream(ctx context.Context, clientStream streams.St
 		case r, ok := <-results:
 			if !ok {
 				log.Infof("stream end, events collected: %d", len(responseEvents))
-				// 修复：部分上游（商汤）的 tool_calls 第一个 chunk arguments="" 导致 pipeline
-				// 的 Read 工具缓冲逻辑没有 flush input_json_delta 和 content_block_stop。
-				// 检测到未关闭的 tool_use block 时，补发 content_block_stop。
-				if len(openToolUseBlocks) > 0 && ra.inboundType == llm.APIFormatAnthropicMessage {
-					for idx := range openToolUseBlocks {
-						log.Infof("fixing unclosed tool_use block: index=%d, sending content_block_stop", idx)
-						stopData, _ := json.Marshal(map[string]any{
-							"type":  "content_block_stop",
-							"index": idx,
-						})
-						if ra.c.Writer != nil {
-							ra.c.Writer.Write([]byte("event: content_block_stop\n"))
-							ra.c.Writer.Write([]byte("data: "))
-							ra.c.Writer.Write(stopData)
-							ra.c.Writer.Write([]byte("\n\n"))
+				// Debug: log last 3 events for diagnosis
+				if len(responseEvents) > 3 && ra.inboundType == llm.APIFormatAnthropicMessage {
+					for i := len(responseEvents) - 3; i < len(responseEvents); i++ {
+						evt := responseEvents[i]
+						if evt != nil && len(evt.Data) > 0 {
+							log.Infof("stream end event[%d/%d] type=%s data=%s", i, len(responseEvents), evt.Type, string(evt.Data[:min(len(evt.Data), 300)]))
 						}
-						fixEvent := &httpclient.StreamEvent{Type: "content_block_stop", Data: stopData}
-						responseEvents = append(responseEvents, fixEvent)
-						delete(openToolUseBlocks, idx)
 					}
-					ra.c.Writer.Flush()
 				}
+				// 修复：部分上游（商汤）的 tool_calls 第一个 chunk arguments="" 导致 pipeline
+				// 注意：未关闭的内容块已在 writeStream 事件处理循环中补发 content_block_stop
+				// （在 message_delta/message_stop 之前），此处不再重复处理。
 				// 补发 finish_reason 终止 chunk：部分上游只发一个大 chunk 不带 finish_reason，客户端会一直等
 				if ra.inboundType == llm.APIFormatOpenAIChatCompletion && len(responseEvents) > 0 {
 					lastEvent := responseEvents[len(responseEvents)-1]
@@ -683,6 +674,36 @@ func (ra *relayAttempt) writeStream(ctx context.Context, clientStream streams.St
 					}
 					delete(openContentBlocks, idx.Index)
 					delete(openToolUseBlocks, idx.Index)
+				}
+			}
+			// 修复：部分上游（商汤）的 pipeline 转换不输出 content_block_stop，导致客户端无法结束内容块。
+			// 在 message_delta/message_stop 之前，为所有未关闭的 content block 补发 content_block_stop。
+			if (eventType == "message_delta" || eventType == "message_stop") && len(openContentBlocks) > 0 && ra.inboundType == llm.APIFormatAnthropicMessage {
+				// 按升序关闭，保证事件顺序
+				indices := make([]int, 0, len(openContentBlocks))
+				for idx := range openContentBlocks {
+					indices = append(indices, idx)
+				}
+				sort.Ints(indices)
+				for _, idx := range indices {
+					log.Infof("fixing unclosed content block: index=%d, sending content_block_stop before %s", idx, eventType)
+					stopData, _ := json.Marshal(map[string]any{
+						"type":  "content_block_stop",
+						"index": idx,
+					})
+					fixEvent := &httpclient.StreamEvent{Type: "content_block_stop", Data: stopData}
+					responseEvents = append(responseEvents, fixEvent)
+					if ra.c.Writer != nil {
+						ra.c.Writer.Write([]byte("event: content_block_stop\n"))
+						ra.c.Writer.Write([]byte("data: "))
+						ra.c.Writer.Write(stopData)
+						ra.c.Writer.Write([]byte("\n\n"))
+					}
+				}
+				ra.c.Writer.Flush()
+				for _, idx := range indices {
+					delete(openContentBlocks, idx)
+					delete(openToolUseBlocks, idx)
 				}
 			}
 			// 这里只临时保存 pipeline 已经转换好的客户端格式事件，正常结束后聚合成最终响应体用于日志；不会把分片逐条落库。

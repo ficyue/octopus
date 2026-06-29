@@ -67,6 +67,7 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
         auto_sync: channel.auto_sync,
         auto_group: channel.auto_group,
         match_regex: channel.match_regex ?? '',
+        key_mode: channel.key_mode ?? 0,
     });
     const t = useTranslations('channel.detail');
 

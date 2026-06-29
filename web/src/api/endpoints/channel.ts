@@ -6,6 +6,15 @@ import { StatsChannel, type StatsMetricsFormatted } from './stats';
 /**
  * 渠道类型枚举
  */
+
+export enum KeyMode {
+    Default = 0,    // 默认(按分组配置)
+    RoundRobin = 1, // 轮询
+    Random = 2,     // 随机
+    Failover = 3,   // 故障转移
+    Weighted = 4,   // 加权
+}
+
 export enum ChannelType {
     OpenAIChat = 0,
     OpenAIResponse = 1,
@@ -68,6 +77,7 @@ export type Channel = {
     param_override?: string | null;
     channel_proxy?: string | null;
     match_regex?: string | null;
+    key_mode: KeyMode;
     stats: StatsChannel;
 };
 

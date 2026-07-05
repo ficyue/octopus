@@ -675,6 +675,30 @@ func (ra *relayAttempt) writeStream(ctx context.Context, clientStream streams.St
 					delete(openContentBlocks, idx.Index)
 					delete(openToolUseBlocks, idx.Index)
 				}
+			} else if eventType == "content_block_delta" {
+				// 修复：部分上游（商汤）的 pipeline 转换可能发送 delta 事件但未发送对应的 content_block_start
+				// 客户端收到 delta 引用未打开的 index 会报 "Content block not found"
+				var idx struct {
+					Index int `json:"index"`
+				}
+				if json.Unmarshal(r.event.Data, &idx) == nil && !openContentBlocks[idx.Index] {
+					log.Infof("auto-opening content block: index=%d (received delta without content_block_start)", idx.Index)
+					startData, _ := json.Marshal(map[string]any{
+						"type":         "content_block_start",
+						"index":        idx.Index,
+						"content_block": map[string]any{"type": "text", "text": ""},
+					})
+					fixStart := &httpclient.StreamEvent{Type: "content_block_start", Data: startData}
+					responseEvents = append(responseEvents, fixStart)
+					if ra.c.Writer != nil {
+						ra.c.Writer.Write([]byte("event: content_block_start\n"))
+						ra.c.Writer.Write([]byte("data: "))
+						ra.c.Writer.Write(startData)
+						ra.c.Writer.Write([]byte("\n\n"))
+						ra.c.Writer.Flush()
+					}
+					openContentBlocks[idx.Index] = true
+				}
 			}
 			// 修复：部分上游（商汤）的 pipeline 转换不输出 content_block_stop，导致客户端无法结束内容块。
 			// 在 message_delta/message_stop 之前，为所有未关闭的 content block 补发 content_block_stop。
